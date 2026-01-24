@@ -7,7 +7,7 @@ node_modules/
 .next/
 out/
 dist/
-build/
+# Note: 'build/' contains Electron builder resources and should be tracked
 
 # Testing
 /test-results/
