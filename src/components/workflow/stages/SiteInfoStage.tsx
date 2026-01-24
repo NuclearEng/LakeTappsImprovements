@@ -1,10 +1,13 @@
 'use client';
 
 import { useStore } from '@/store/useStore';
-import { useCallback, useState } from 'react';
-import { useDropzone } from 'react-dropzone';
+import { useCallback, useState, lazy, Suspense } from 'react';
+import { useDropzone, FileRejection } from 'react-dropzone';
 import { v4 as uuidv4 } from 'uuid';
-import type { UploadedFile } from '@/types';
+import type { UploadedFile, SitePlanDrawing } from '@/types';
+
+// Lazy load the drawing editor to avoid SSR issues with Fabric.js
+const SitePlanEditor = lazy(() => import('@/components/drawing/SitePlanEditor'));
 
 const ACCEPTED_FILE_TYPES = {
   'image/*': ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.tiff', '.tif', '.bmp', '.heic', '.heif', '.svg'],
@@ -19,22 +22,20 @@ const ACCEPTED_FILE_TYPES = {
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
 
+type SiteInputMode = 'upload' | 'draw';
+
+interface FileError {
+  message: string;
+  code: string;
+}
+
 export default function SiteInfoStage() {
-  const { project, updateSiteInfo, saveProject, addNotification } = useStore();
+  const { project, updateSiteInfo, saveProject, addNotification, saveDrawing } = useStore();
   const [isUploading, setIsUploading] = useState(false);
+  const [inputMode, setInputMode] = useState<SiteInputMode>('upload');
 
-  if (!project) return null;
-
-  const { site } = project;
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    updateSiteInfo({ [name]: value });
-  };
-
-  const handleBlur = () => {
-    saveProject();
-  };
+  // Get site from project, with fallback for hooks that need it
+  const site = project?.site;
 
   const processFile = async (file: File): Promise<UploadedFile> => {
     return new Promise((resolve, reject) => {
@@ -55,10 +56,12 @@ export default function SiteInfoStage() {
     });
   };
 
-  const onDrop = useCallback(async (acceptedFiles: File[], rejectedFiles: any[]) => {
+  const onDrop = useCallback(async (acceptedFiles: File[], rejectedFiles: FileRejection[]) => {
+    if (!site) return;
+
     // Handle rejected files
     rejectedFiles.forEach((rejection) => {
-      const errors = rejection.errors.map((e: any) => e.message).join(', ');
+      const errors = rejection.errors.map((e: FileError) => e.message).join(', ');
       addNotification({
         type: 'error',
         title: 'File rejected',
@@ -85,7 +88,7 @@ export default function SiteInfoStage() {
         dismissible: true,
         duration: 3000,
       });
-    } catch (error) {
+    } catch (_err) {
       addNotification({
         type: 'error',
         title: 'Upload failed',
@@ -95,7 +98,7 @@ export default function SiteInfoStage() {
     } finally {
       setIsUploading(false);
     }
-  }, [site.sitePlanFiles, updateSiteInfo, saveProject, addNotification]);
+  }, [site, updateSiteInfo, saveProject, addNotification]);
 
   const { getRootProps, getInputProps, isDragActive, isDragReject } = useDropzone({
     onDrop,
@@ -103,6 +106,68 @@ export default function SiteInfoStage() {
     maxSize: MAX_FILE_SIZE,
     multiple: true,
   });
+
+  // Early return AFTER all hooks
+  if (!project || !site) return null;
+
+  // Handle drawing save - convert to uploadable file
+  const handleDrawingSave = (drawing: SitePlanDrawing) => {
+    saveDrawing(drawing);
+
+    // If there's an exported image, add it to site plan files
+    if (drawing.exportedImage) {
+      const drawingFile: UploadedFile = {
+        id: `drawing-${drawing.id}`,
+        name: `${drawing.name}.png`,
+        type: 'image/png',
+        size: drawing.exportedImage.length,
+        data: drawing.exportedImage.split(',')[1] || drawing.exportedImage,
+        uploadedAt: new Date().toISOString(),
+        preview: drawing.exportedImage,
+      };
+
+      // Update or add the drawing file
+      const existingFiles = site.sitePlanFiles || [];
+      const existingIndex = existingFiles.findIndex((f) => f.id === drawingFile.id);
+
+      if (existingIndex >= 0) {
+        existingFiles[existingIndex] = drawingFile;
+      } else {
+        existingFiles.push(drawingFile);
+      }
+
+      updateSiteInfo({ sitePlanFiles: [...existingFiles] });
+      saveProject();
+
+      addNotification({
+        type: 'success',
+        title: 'Drawing saved',
+        message: 'Your site plan drawing has been saved and added to your documents.',
+        dismissible: true,
+        duration: 3000,
+      });
+    }
+  };
+
+  // Handle drawing export
+  const handleDrawingExport = (_imageData: string) => {
+    addNotification({
+      type: 'success',
+      title: 'Drawing exported',
+      message: 'Your site plan has been exported as an image.',
+      dismissible: true,
+      duration: 3000,
+    });
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    updateSiteInfo({ [name]: value });
+  };
+
+  const handleBlur = () => {
+    saveProject();
+  };
 
   const removeFile = (fileId: string) => {
     updateSiteInfo({
@@ -202,12 +267,74 @@ export default function SiteInfoStage() {
         </div>
       </div>
 
-      {/* File Upload */}
+      {/* Site Plan Input Mode Toggle */}
       <div className="card mb-6">
         <h2 className="text-lg font-semibold text-slate-900 mb-2">Site Plans & Documents</h2>
         <p className="text-sm text-slate-600 mb-4">
-          Upload site plans, surveys, photos, or any other relevant documents.
+          Upload existing site plans or create a new drawing using our built-in editor.
         </p>
+
+        {/* Mode Toggle */}
+        <div className="flex gap-2 mb-4">
+          <button
+            onClick={() => setInputMode('upload')}
+            className={`flex-1 px-4 py-3 rounded-lg border-2 transition-all ${
+              inputMode === 'upload'
+                ? 'border-primary-500 bg-primary-50 text-primary-700'
+                : 'border-slate-200 hover:border-slate-300 text-slate-600'
+            }`}
+          >
+            <div className="flex items-center justify-center gap-2">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+              <span className="font-medium">Upload Files</span>
+            </div>
+            <p className="text-xs mt-1 opacity-70">Upload existing plans, surveys, or photos</p>
+          </button>
+          <button
+            onClick={() => setInputMode('draw')}
+            className={`flex-1 px-4 py-3 rounded-lg border-2 transition-all ${
+              inputMode === 'draw'
+                ? 'border-primary-500 bg-primary-50 text-primary-700'
+                : 'border-slate-200 hover:border-slate-300 text-slate-600'
+            }`}
+          >
+            <div className="flex items-center justify-center gap-2">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+              </svg>
+              <span className="font-medium">Draw Site Plan</span>
+            </div>
+            <p className="text-xs mt-1 opacity-70">Create a drawing with our CAD-style editor</p>
+          </button>
+        </div>
+      </div>
+
+      {/* Drawing Editor */}
+      {inputMode === 'draw' && (
+        <div className="card mb-6">
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center h-64 bg-slate-50 rounded-lg">
+                <div className="text-center">
+                  <div className="w-8 h-8 spinner border-4 mx-auto mb-2" />
+                  <p className="text-slate-600">Loading drawing editor...</p>
+                </div>
+              </div>
+            }
+          >
+            <SitePlanEditor
+              onSave={handleDrawingSave}
+              onExport={handleDrawingExport}
+            />
+          </Suspense>
+        </div>
+      )}
+
+      {/* File Upload */}
+      {inputMode === 'upload' && (
+      <div className="card mb-6">
 
         {/* Dropzone */}
         <div
@@ -270,6 +397,7 @@ export default function SiteInfoStage() {
           </div>
         )}
       </div>
+      )}
 
       {/* Tips */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">

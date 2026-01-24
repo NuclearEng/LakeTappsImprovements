@@ -179,3 +179,149 @@ export interface ActionPrompt {
   isCompleted: boolean;
   completedAt?: string;
 }
+
+// ============================================
+// 2D CAD Drawing Types
+// ============================================
+
+export type DrawingToolType =
+  | 'select'
+  | 'pan'
+  // Basic shapes
+  | 'rectangle'
+  | 'circle'
+  | 'ellipse'
+  | 'line'
+  | 'triangle'
+  // Polynomial/Curves
+  | 'polyline'
+  | 'polygon'
+  | 'arc'
+  | 'curve' // Bezier curve
+  | 'spline'
+  // Advanced
+  | 'dimension'
+  | 'text'
+  | 'image'
+  | 'freehand';
+
+export type DrawingLayerType =
+  | 'property_boundary'
+  | 'existing_structures'
+  | 'proposed_improvements'
+  | 'dimensions'
+  | 'annotations'
+  | 'aerial_imagery';
+
+export interface DrawingPoint {
+  x: number;
+  y: number;
+}
+
+export interface DrawingStyle {
+  strokeColor: string;
+  strokeWidth: number;
+  strokeStyle: 'solid' | 'dashed' | 'dotted';
+  fillColor: string;
+  fillOpacity: number;
+  fontSize?: number;
+  fontFamily?: string;
+}
+
+export interface DrawingObject {
+  id: string;
+  type: DrawingToolType;
+  layer: DrawingLayerType;
+  points: DrawingPoint[];
+  style: DrawingStyle;
+  label?: string;
+  dimensions?: {
+    width?: number;
+    height?: number;
+    length?: number;
+    radius?: number;
+    unit: 'feet' | 'inches' | 'meters';
+  };
+  rotation: number;
+  locked: boolean;
+  visible: boolean;
+  createdAt: string;
+  updatedAt: string;
+  // Fabric.js serialized object
+  fabricData?: string;
+}
+
+export interface DrawingLayer {
+  id: DrawingLayerType;
+  name: string;
+  visible: boolean;
+  locked: boolean;
+  opacity: number;
+  order: number;
+}
+
+export interface DrawingGrid {
+  enabled: boolean;
+  size: number; // pixels
+  snapToGrid: boolean;
+  color: string;
+  opacity: number;
+}
+
+export interface DrawingScale {
+  pixelsPerFoot: number;
+  displayUnit: 'feet' | 'inches' | 'meters';
+  scaleRatio: string; // e.g., "1 inch = 10 feet"
+}
+
+export interface SitePlanDrawing {
+  id: string;
+  name: string;
+  description?: string;
+  canvasWidth: number;
+  canvasHeight: number;
+  scale: DrawingScale;
+  grid: DrawingGrid;
+  layers: DrawingLayer[];
+  objects: DrawingObject[];
+  backgroundImage?: string; // base64 aerial image
+  parcelData?: ParcelData;
+  createdAt: string;
+  updatedAt: string;
+  // Full Fabric.js canvas JSON for complete restoration
+  fabricCanvasJson?: string;
+  // Exported image for documents
+  exportedImage?: string; // base64 PNG
+}
+
+export interface ParcelData {
+  parcelNumber: string;
+  ownerName?: string;
+  address?: string;
+  acreage?: number;
+  boundaryCoordinates?: DrawingPoint[];
+  fetchedAt: string;
+  source: 'pierce_county' | 'wa_state' | 'manual';
+}
+
+// Drawing History for Undo/Redo
+export interface DrawingHistoryEntry {
+  timestamp: string;
+  action: 'add' | 'modify' | 'delete' | 'bulk';
+  objectIds: string[];
+  previousState?: string; // JSON
+  newState?: string; // JSON
+}
+
+export interface DrawingState {
+  currentDrawing: SitePlanDrawing | null;
+  savedDrawings: SitePlanDrawing[];
+  activeTool: DrawingToolType;
+  activeLayer: DrawingLayerType;
+  activeStyle: DrawingStyle;
+  selectedObjectIds: string[];
+  history: DrawingHistoryEntry[];
+  historyIndex: number;
+  clipboard: DrawingObject[];
+  isModified: boolean;
+}

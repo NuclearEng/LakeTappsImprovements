@@ -1,14 +1,14 @@
 'use client';
 
 import { useStore } from '@/store/useStore';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 
 interface FormErrors {
   [key: string]: string;
 }
 
 export default function PropertyOwnerStage() {
-  const { project, updateOwner, saveProject, addNotification } = useStore();
+  const { project, updateOwner, saveProject } = useStore();
   const [errors, setErrors] = useState<FormErrors>({});
   const [touched, setTouched] = useState<Set<string>>(new Set());
 

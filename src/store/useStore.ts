@@ -12,6 +12,15 @@ import type {
   ConfirmationDialog,
   ActionPrompt,
   WorkflowStage,
+  // Drawing types
+  DrawingState,
+  DrawingToolType,
+  DrawingLayerType,
+  DrawingStyle,
+  DrawingObject,
+  DrawingHistoryEntry,
+  SitePlanDrawing,
+  DrawingScale,
 } from '@/types';
 
 interface AppState {
@@ -84,6 +93,26 @@ interface AppState {
 
   // Actions - Database
   setDbReady: (ready: boolean) => void;
+
+  // Drawing state
+  drawingState: DrawingState;
+
+  // Actions - Drawing
+  initializeDrawing: (drawing: SitePlanDrawing) => void;
+  saveDrawing: (drawing: SitePlanDrawing) => void;
+  deleteDrawing: (id: string) => void;
+  setActiveTool: (tool: DrawingToolType) => void;
+  setActiveLayer: (layer: DrawingLayerType) => void;
+  setActiveStyle: (style: DrawingStyle) => void;
+  setSelectedObjects: (ids: string[]) => void;
+  updateDrawingObjects: (objects: DrawingObject[]) => void;
+  addToDrawingHistory: (entry: DrawingHistoryEntry) => void;
+  undoDrawing: () => void;
+  redoDrawing: () => void;
+  updateDrawingScale: (scale: DrawingScale) => void;
+  clearDrawingClipboard: () => void;
+  copyToClipboard: (objects: DrawingObject[]) => void;
+  pasteFromClipboard: () => DrawingObject[];
 }
 
 const WORKFLOW_STAGES: WorkflowStage[] = [
@@ -454,6 +483,215 @@ export const useStore = create<AppState>((set, get) => ({
   // Database actions
   setDbReady: (ready) => {
     set({ dbReady: ready });
+  },
+
+  // Drawing state
+  drawingState: {
+    currentDrawing: null,
+    savedDrawings: [],
+    activeTool: 'select',
+    activeLayer: 'proposed_improvements',
+    activeStyle: {
+      strokeColor: '#000000',
+      strokeWidth: 2,
+      strokeStyle: 'solid',
+      fillColor: 'transparent',
+      fillOpacity: 0.3,
+    },
+    selectedObjectIds: [],
+    history: [],
+    historyIndex: -1,
+    clipboard: [],
+    isModified: false,
+  },
+
+  // Drawing actions
+  initializeDrawing: (drawing) => {
+    set((state) => ({
+      drawingState: {
+        ...state.drawingState,
+        currentDrawing: drawing,
+        isModified: false,
+        history: [],
+        historyIndex: -1,
+      },
+    }));
+  },
+
+  saveDrawing: (drawing) => {
+    set((state) => {
+      const existingIndex = state.drawingState.savedDrawings.findIndex(
+        (d) => d.id === drawing.id
+      );
+      const updatedDrawings =
+        existingIndex >= 0
+          ? state.drawingState.savedDrawings.map((d, i) =>
+              i === existingIndex ? drawing : d
+            )
+          : [...state.drawingState.savedDrawings, drawing];
+
+      return {
+        drawingState: {
+          ...state.drawingState,
+          currentDrawing: drawing,
+          savedDrawings: updatedDrawings,
+          isModified: false,
+        },
+      };
+    });
+  },
+
+  deleteDrawing: (id) => {
+    set((state) => ({
+      drawingState: {
+        ...state.drawingState,
+        savedDrawings: state.drawingState.savedDrawings.filter((d) => d.id !== id),
+        currentDrawing:
+          state.drawingState.currentDrawing?.id === id
+            ? null
+            : state.drawingState.currentDrawing,
+      },
+    }));
+  },
+
+  setActiveTool: (tool) => {
+    set((state) => ({
+      drawingState: {
+        ...state.drawingState,
+        activeTool: tool,
+      },
+    }));
+  },
+
+  setActiveLayer: (layer) => {
+    set((state) => ({
+      drawingState: {
+        ...state.drawingState,
+        activeLayer: layer,
+      },
+    }));
+  },
+
+  setActiveStyle: (style) => {
+    set((state) => ({
+      drawingState: {
+        ...state.drawingState,
+        activeStyle: style,
+      },
+    }));
+  },
+
+  setSelectedObjects: (ids) => {
+    set((state) => ({
+      drawingState: {
+        ...state.drawingState,
+        selectedObjectIds: ids,
+      },
+    }));
+  },
+
+  updateDrawingObjects: (objects) => {
+    set((state) => ({
+      drawingState: {
+        ...state.drawingState,
+        currentDrawing: state.drawingState.currentDrawing
+          ? {
+              ...state.drawingState.currentDrawing,
+              objects,
+              updatedAt: new Date().toISOString(),
+            }
+          : null,
+        isModified: true,
+      },
+    }));
+  },
+
+  addToDrawingHistory: (entry) => {
+    set((state) => {
+      const newHistory = state.drawingState.history.slice(
+        0,
+        state.drawingState.historyIndex + 1
+      );
+      newHistory.push(entry);
+      // Keep last 50 history entries
+      const trimmedHistory = newHistory.slice(-50);
+
+      return {
+        drawingState: {
+          ...state.drawingState,
+          history: trimmedHistory,
+          historyIndex: trimmedHistory.length - 1,
+        },
+      };
+    });
+  },
+
+  undoDrawing: () => {
+    set((state) => {
+      if (state.drawingState.historyIndex < 0) return state;
+      return {
+        drawingState: {
+          ...state.drawingState,
+          historyIndex: state.drawingState.historyIndex - 1,
+        },
+      };
+    });
+  },
+
+  redoDrawing: () => {
+    set((state) => {
+      if (state.drawingState.historyIndex >= state.drawingState.history.length - 1)
+        return state;
+      return {
+        drawingState: {
+          ...state.drawingState,
+          historyIndex: state.drawingState.historyIndex + 1,
+        },
+      };
+    });
+  },
+
+  updateDrawingScale: (scale) => {
+    set((state) => ({
+      drawingState: {
+        ...state.drawingState,
+        currentDrawing: state.drawingState.currentDrawing
+          ? {
+              ...state.drawingState.currentDrawing,
+              scale,
+              updatedAt: new Date().toISOString(),
+            }
+          : null,
+      },
+    }));
+  },
+
+  clearDrawingClipboard: () => {
+    set((state) => ({
+      drawingState: {
+        ...state.drawingState,
+        clipboard: [],
+      },
+    }));
+  },
+
+  copyToClipboard: (objects) => {
+    set((state) => ({
+      drawingState: {
+        ...state.drawingState,
+        clipboard: objects,
+      },
+    }));
+  },
+
+  pasteFromClipboard: () => {
+    const { drawingState } = get();
+    return drawingState.clipboard.map((obj) => ({
+      ...obj,
+      id: uuidv4(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }));
   },
 }));
 

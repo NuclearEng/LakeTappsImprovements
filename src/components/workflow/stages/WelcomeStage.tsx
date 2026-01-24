@@ -3,7 +3,7 @@
 import { useStore } from '@/store/useStore';
 
 export default function WelcomeStage() {
-  const { nextStage, project } = useStore();
+  const { nextStage } = useStore();
 
   return (
     <div className="animate-fade-in">
