@@ -1,0 +1,76 @@
+{
+  "name": "lake-tapps-permits",
+  "version": "1.0.0",
+  "description": "Lake Tapps Improvement Permit Workflow Application",
+  "main": "electron/main.js",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "electron:dev": "concurrently \"next dev\" \"wait-on http://localhost:3000 && electron .\"",
+    "electron:build": "next build && electron-builder",
+    "electron:start": "electron .",
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:headed": "playwright test --headed"
+  },
+  "dependencies": {
+    "next": "^14.0.4",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "sql.js": "^1.9.0",
+    "pdf-lib": "^1.17.1",
+    "docx": "^8.5.0",
+    "zustand": "^4.4.7",
+    "uuid": "^9.0.1",
+    "date-fns": "^3.0.6",
+    "react-dropzone": "^14.2.3",
+    "heic2any": "^0.0.4",
+    "browser-image-compression": "^2.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.5",
+    "@types/react": "^18.2.45",
+    "@types/react-dom": "^18.2.18",
+    "@types/uuid": "^9.0.7",
+    "typescript": "^5.3.3",
+    "electron": "^28.1.0",
+    "electron-builder": "^24.9.1",
+    "concurrently": "^8.2.2",
+    "wait-on": "^7.2.0",
+    "@playwright/test": "^1.40.1",
+    "tailwindcss": "^3.4.0",
+    "postcss": "^8.4.32",
+    "autoprefixer": "^10.4.16",
+    "eslint": "^8.56.0",
+    "eslint-config-next": "^14.0.4"
+  },
+  "build": {
+    "appId": "com.laketapps.permits",
+    "productName": "Lake Tapps Permits",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      ".next/**/*",
+      "public/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "target": "dmg",
+      "icon": "public/icon.icns"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "public/icon.ico"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "public/icon.png"
+    }
+  }
+}

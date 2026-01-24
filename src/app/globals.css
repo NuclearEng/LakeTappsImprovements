@@ -1,0 +1,246 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 15, 23, 42;
+  --background-start-rgb: 248, 250, 252;
+  --background-end-rgb: 241, 245, 249;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(
+      to bottom,
+      transparent,
+      rgb(var(--background-end-rgb))
+    )
+    rgb(var(--background-start-rgb));
+  min-height: 100vh;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* Focus states for accessibility */
+*:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* Form elements */
+input,
+textarea,
+select {
+  @apply rounded-lg border border-slate-300 px-4 py-2 text-slate-900
+         placeholder-slate-400 transition-colors duration-200
+         focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20;
+}
+
+input:disabled,
+textarea:disabled,
+select:disabled {
+  @apply bg-slate-100 cursor-not-allowed opacity-60;
+}
+
+/* Button styles */
+.btn {
+  @apply inline-flex items-center justify-center rounded-lg px-4 py-2
+         font-medium transition-all duration-200 focus:outline-none
+         focus:ring-2 focus:ring-offset-2 disabled:opacity-50
+         disabled:cursor-not-allowed;
+}
+
+.btn-primary {
+  @apply bg-primary-600 text-white hover:bg-primary-700
+         focus:ring-primary-500 active:bg-primary-800;
+}
+
+.btn-secondary {
+  @apply bg-slate-100 text-slate-700 hover:bg-slate-200
+         focus:ring-slate-500 active:bg-slate-300;
+}
+
+.btn-success {
+  @apply bg-emerald-600 text-white hover:bg-emerald-700
+         focus:ring-emerald-500 active:bg-emerald-800;
+}
+
+.btn-danger {
+  @apply bg-red-600 text-white hover:bg-red-700
+         focus:ring-red-500 active:bg-red-800;
+}
+
+.btn-outline {
+  @apply border-2 border-primary-600 text-primary-600 bg-transparent
+         hover:bg-primary-50 focus:ring-primary-500;
+}
+
+.btn-lg {
+  @apply px-6 py-3 text-lg;
+}
+
+.btn-sm {
+  @apply px-3 py-1.5 text-sm;
+}
+
+/* Card styles */
+.card {
+  @apply bg-white rounded-xl shadow-sm border border-slate-200 p-6;
+}
+
+.card-hover {
+  @apply hover:shadow-md hover:border-primary-200 transition-all duration-200 cursor-pointer;
+}
+
+/* Progress bar */
+.progress-bar {
+  @apply h-2 bg-slate-200 rounded-full overflow-hidden;
+}
+
+.progress-bar-fill {
+  @apply h-full bg-primary-600 rounded-full transition-all duration-500;
+}
+
+/* Notification styles */
+.notification {
+  @apply fixed z-50 p-4 rounded-lg shadow-lg border-l-4 max-w-md;
+}
+
+.notification-success {
+  @apply bg-emerald-50 border-emerald-500 text-emerald-800;
+}
+
+.notification-error {
+  @apply bg-red-50 border-red-500 text-red-800;
+}
+
+.notification-warning {
+  @apply bg-amber-50 border-amber-500 text-amber-800;
+}
+
+.notification-info {
+  @apply bg-blue-50 border-blue-500 text-blue-800;
+}
+
+/* Stage indicator */
+.stage-indicator {
+  @apply flex items-center;
+}
+
+.stage-dot {
+  @apply w-10 h-10 rounded-full flex items-center justify-center
+         font-semibold text-sm transition-all duration-200;
+}
+
+.stage-dot-complete {
+  @apply bg-emerald-500 text-white;
+}
+
+.stage-dot-current {
+  @apply bg-primary-600 text-white ring-4 ring-primary-200;
+}
+
+.stage-dot-upcoming {
+  @apply bg-slate-200 text-slate-500;
+}
+
+.stage-line {
+  @apply flex-1 h-1 mx-2 rounded-full transition-all duration-200;
+}
+
+.stage-line-complete {
+  @apply bg-emerald-500;
+}
+
+.stage-line-incomplete {
+  @apply bg-slate-200;
+}
+
+/* File upload dropzone */
+.dropzone {
+  @apply border-2 border-dashed border-slate-300 rounded-xl p-8
+         text-center transition-all duration-200 cursor-pointer;
+}
+
+.dropzone:hover,
+.dropzone-active {
+  @apply border-primary-500 bg-primary-50;
+}
+
+.dropzone-reject {
+  @apply border-red-500 bg-red-50;
+}
+
+/* Tooltip */
+.tooltip {
+  @apply absolute z-50 px-2 py-1 text-sm text-white bg-slate-800
+         rounded shadow-lg whitespace-nowrap;
+}
+
+/* Loading spinner */
+.spinner {
+  @apply animate-spin rounded-full border-2 border-slate-200 border-t-primary-600;
+}
+
+/* Modal overlay */
+.modal-overlay {
+  @apply fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4;
+}
+
+.modal-content {
+  @apply bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-auto;
+}
+
+/* Animation classes */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-slide-in {
+  animation: slideIn 0.3s ease-out;
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* Print styles */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}
