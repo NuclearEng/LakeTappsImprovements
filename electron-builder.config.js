@@ -24,11 +24,10 @@ module.exports = {
   // macOS configuration
   mac: {
     category: 'public.app-category.productivity',
-    icon: 'build/icon.icns',
     target: [
       {
         target: 'dmg',
-        arch: ['x64', 'arm64'],
+        arch: ['universal'],
       },
     ],
     hardenedRuntime: true,
@@ -55,14 +54,12 @@ module.exports = {
 
   // Windows configuration
   win: {
-    icon: 'build/icon.ico',
     target: [
       {
         target: 'nsis',
         arch: ['x64'],
       },
     ],
-    publisherName: 'Lake Tapps Permits',
   },
 
   // Windows installer configuration
@@ -78,15 +75,10 @@ module.exports = {
 
   // Linux configuration
   linux: {
-    icon: 'build/icons',
     category: 'Office',
     target: [
       {
         target: 'AppImage',
-        arch: ['x64'],
-      },
-      {
-        target: 'deb',
         arch: ['x64'],
       },
     ],
