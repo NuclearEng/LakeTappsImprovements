@@ -468,6 +468,122 @@ export default function DrawingCanvas({
     });
   }, [width, height, fabric]);
 
+  // Set background image with alignment controls
+  const setBackgroundImage = useCallback((
+    imageData: string,
+    options: {
+      opacity?: number;
+      scale?: number;
+      offsetX?: number;
+      offsetY?: number;
+      rotation?: number;
+      locked?: boolean;
+    } = {}
+  ) => {
+    if (!fabricRef.current || !fabric) return;
+
+    const canvas = fabricRef.current;
+    const {
+      opacity = 0.5,
+      scale = 1,
+      offsetX = 0,
+      offsetY = 0,
+      rotation = 0,
+      locked = false,
+    } = options;
+
+    fabric.Image.fromURL(imageData, (img: FabricObject) => {
+      // Calculate center position
+      const centerX = width / 2 + offsetX;
+      const centerY = height / 2 + offsetY;
+
+      img.set({
+        left: centerX,
+        top: centerY,
+        originX: 'center',
+        originY: 'center',
+        opacity: opacity,
+        scaleX: scale,
+        scaleY: scale,
+        angle: rotation,
+        selectable: !locked,
+        evented: !locked,
+        hasControls: !locked,
+        hasBorders: !locked,
+        id: 'background-image',
+        isBackgroundImage: true,
+      });
+
+      // Remove existing background image if any
+      const existingBg = canvas.getObjects().find((obj: FabricObject) => obj.isBackgroundImage);
+      if (existingBg) {
+        canvas.remove(existingBg);
+      }
+
+      canvas.add(img);
+      canvas.sendToBack(img);
+      canvas.renderAll();
+    });
+  }, [width, height, fabric]);
+
+  // Update background image properties
+  const updateBackgroundImage = useCallback((
+    options: {
+      opacity?: number;
+      scale?: number;
+      offsetX?: number;
+      offsetY?: number;
+      rotation?: number;
+      locked?: boolean;
+    }
+  ) => {
+    if (!fabricRef.current) return;
+
+    const canvas = fabricRef.current;
+    const bgImage = canvas.getObjects().find((obj: FabricObject) => obj.isBackgroundImage);
+
+    if (!bgImage) return;
+
+    const {
+      opacity,
+      scale,
+      offsetX,
+      offsetY,
+      rotation,
+      locked,
+    } = options;
+
+    if (opacity !== undefined) bgImage.set('opacity', opacity);
+    if (scale !== undefined) {
+      bgImage.set('scaleX', scale);
+      bgImage.set('scaleY', scale);
+    }
+    if (offsetX !== undefined) bgImage.set('left', width / 2 + offsetX);
+    if (offsetY !== undefined) bgImage.set('top', height / 2 + offsetY);
+    if (rotation !== undefined) bgImage.set('angle', rotation);
+    if (locked !== undefined) {
+      bgImage.set('selectable', !locked);
+      bgImage.set('evented', !locked);
+      bgImage.set('hasControls', !locked);
+      bgImage.set('hasBorders', !locked);
+    }
+
+    canvas.renderAll();
+  }, [width, height]);
+
+  // Remove background image
+  const removeBackgroundImage = useCallback(() => {
+    if (!fabricRef.current) return;
+
+    const canvas = fabricRef.current;
+    const bgImage = canvas.getObjects().find((obj: FabricObject) => obj.isBackgroundImage);
+
+    if (bgImage) {
+      canvas.remove(bgImage);
+      canvas.renderAll();
+    }
+  }, []);
+
   const deleteSelected = useCallback(() => {
     if (!fabricRef.current) return;
     const activeObjects = fabricRef.current.getActiveObjects();
@@ -581,6 +697,9 @@ export default function DrawingCanvas({
       addDimension,
       addMeasurement,
       addImage,
+      setBackgroundImage,
+      updateBackgroundImage,
+      removeBackgroundImage,
       deleteSelected,
       exportToImage,
       exportToJSON,
@@ -593,7 +712,7 @@ export default function DrawingCanvas({
       getCanvas: () => fabricRef.current,
       getScale: () => currentDrawing?.scale?.pixelsPerFoot || 10,
     };
-  }, [addText, addLabel, addDimension, addMeasurement, addImage, deleteSelected, exportToImage, exportToJSON, loadFromJSON, clearCanvas, undo, redo, setTool, cancelCurrentOperation, currentDrawing?.scale]);
+  }, [addText, addLabel, addDimension, addMeasurement, addImage, setBackgroundImage, updateBackgroundImage, removeBackgroundImage, deleteSelected, exportToImage, exportToJSON, loadFromJSON, clearCanvas, undo, redo, setTool, cancelCurrentOperation, currentDrawing?.scale]);
 
   return (
     <div className="drawing-canvas-container relative border border-slate-300 rounded-lg overflow-hidden bg-white">

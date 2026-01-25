@@ -1,15 +1,48 @@
 'use client';
 
 import { useStore } from '@/store/useStore';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+import { CompletionIndicator } from '@/components/ui/FormField';
+import { checkProjectDetailsCompletion } from '@/lib/validation';
+
+interface FormErrors {
+  [key: string]: string;
+}
 
 export default function ProjectDetailsStage() {
   const { project, updateProjectDetails, saveProject, setRequiredPermits } = useStore();
   const [showCostHelp, setShowCostHelp] = useState(false);
+  const [errors, setErrors] = useState<FormErrors>({});
+  const [touched, setTouched] = useState<Set<string>>(new Set());
+
+  // Memoize completion status
+  const completionStatus = useMemo(() => {
+    if (!project) return null;
+    return checkProjectDetailsCompletion(project.details);
+  }, [project]);
 
   if (!project) return null;
 
   const { details } = project;
+
+  const validateField = (name: string, value: string | number): string => {
+    switch (name) {
+      case 'description':
+        if (!String(value).trim()) return 'Project description is required';
+        if (String(value).length < 10) return 'Please provide more detail (at least 10 characters)';
+        break;
+      case 'startDate':
+        if (!value) return 'Start date is required';
+        break;
+      case 'completionDate':
+        if (!value) return 'Completion date is required';
+        if (details.startDate && new Date(String(value)) < new Date(details.startDate)) {
+          return 'Completion date must be after start date';
+        }
+        break;
+    }
+    return '';
+  };
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
@@ -24,9 +57,19 @@ export default function ProjectDetailsStage() {
     }
 
     updateProjectDetails({ [name]: processedValue });
+
+    // Validate on change if touched
+    if (touched.has(name) && typeof processedValue !== 'boolean') {
+      const error = validateField(name, processedValue);
+      setErrors((prev) => ({ ...prev, [name]: error }));
+    }
   };
 
-  const handleBlur = () => {
+  const handleBlur = (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setTouched((prev) => new Set(prev).add(name));
+    const error = validateField(name, value);
+    setErrors((prev) => ({ ...prev, [name]: error }));
     saveProject();
     calculateRequiredPermits();
   };
@@ -72,6 +115,16 @@ export default function ProjectDetailsStage() {
         </p>
       </div>
 
+      {/* Completion Indicator */}
+      {completionStatus && (
+        <CompletionIndicator
+          completedFields={completionStatus.completedFields}
+          totalFields={completionStatus.totalFields}
+          missingFields={completionStatus.missingFields}
+          className="mb-6"
+        />
+      )}
+
       {/* Project Description */}
       <div className="card mb-6">
         <h2 className="text-lg font-semibold text-slate-900 mb-4">Project Description</h2>
@@ -89,11 +142,21 @@ export default function ProjectDetailsStage() {
               onBlur={handleBlur}
               rows={4}
               placeholder="Example: Install a new 6' x 24' floating dock with aluminum frame and composite decking, connected to shoreline with a 4' x 16' gangway..."
-              className="w-full"
+              className={`w-full ${errors.description ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20' : ''}`}
+              aria-invalid={!!errors.description}
             />
-            <p className="mt-1 text-sm text-slate-500">
-              Include dimensions, materials, and any relevant technical details.
-            </p>
+            {errors.description ? (
+              <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                {errors.description}
+              </p>
+            ) : (
+              <p className="mt-1 text-sm text-slate-500">
+                Include dimensions, materials, and any relevant technical details.
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -143,7 +206,7 @@ export default function ProjectDetailsStage() {
           {/* Start Date */}
           <div>
             <label htmlFor="startDate" className="block text-sm font-medium text-slate-700 mb-1">
-              Planned Start Date
+              Planned Start Date <span className="text-red-500">*</span>
             </label>
             <input
               type="date"
@@ -152,14 +215,23 @@ export default function ProjectDetailsStage() {
               value={details.startDate}
               onChange={handleChange}
               onBlur={handleBlur}
-              className="w-full"
+              className={`w-full ${errors.startDate ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20' : ''}`}
+              aria-invalid={!!errors.startDate}
             />
+            {errors.startDate && (
+              <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                {errors.startDate}
+              </p>
+            )}
           </div>
 
           {/* Completion Date */}
           <div>
             <label htmlFor="completionDate" className="block text-sm font-medium text-slate-700 mb-1">
-              Expected Completion
+              Expected Completion <span className="text-red-500">*</span>
             </label>
             <input
               type="date"
@@ -168,8 +240,17 @@ export default function ProjectDetailsStage() {
               value={details.completionDate}
               onChange={handleChange}
               onBlur={handleBlur}
-              className="w-full"
+              className={`w-full ${errors.completionDate ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20' : ''}`}
+              aria-invalid={!!errors.completionDate}
             />
+            {errors.completionDate && (
+              <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                {errors.completionDate}
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -189,7 +270,6 @@ export default function ProjectDetailsStage() {
               name="inWater"
               checked={details.inWater}
               onChange={handleChange}
-              onBlur={handleBlur}
               className="mt-1 w-5 h-5 text-primary-600 rounded focus:ring-primary-500"
             />
             <div>
@@ -207,7 +287,6 @@ export default function ProjectDetailsStage() {
               name="belowHighWaterLine"
               checked={details.belowHighWaterLine}
               onChange={handleChange}
-              onBlur={handleBlur}
               className="mt-1 w-5 h-5 text-primary-600 rounded focus:ring-primary-500"
             />
             <div>
@@ -225,7 +304,6 @@ export default function ProjectDetailsStage() {
               name="existingStructure"
               checked={details.existingStructure}
               onChange={handleChange}
-              onBlur={handleBlur}
               className="mt-1 w-5 h-5 text-primary-600 rounded focus:ring-primary-500"
             />
             <div>
@@ -240,7 +318,7 @@ export default function ProjectDetailsStage() {
         {details.existingStructure && (
           <div className="mt-4">
             <label htmlFor="existingStructureDescription" className="block text-sm font-medium text-slate-700 mb-1">
-              Describe the existing structure
+              Describe the existing structure <span className="text-red-500">*</span>
             </label>
             <textarea
               id="existingStructureDescription"
@@ -250,8 +328,17 @@ export default function ProjectDetailsStage() {
               onBlur={handleBlur}
               rows={2}
               placeholder="Existing dock, approximate age, current condition..."
-              className="w-full"
+              className={`w-full ${errors.existingStructureDescription ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20' : ''}`}
+              aria-invalid={!!errors.existingStructureDescription}
             />
+            {errors.existingStructureDescription && (
+              <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                {errors.existingStructureDescription}
+              </p>
+            )}
           </div>
         )}
       </div>

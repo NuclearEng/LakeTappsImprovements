@@ -1,9 +1,32 @@
 'use client';
 
 import { useStore } from '@/store/useStore';
+import { useState, useEffect } from 'react';
+import { getAllProjects } from '@/lib/db';
+import ProjectDashboard from '@/components/ProjectDashboard';
 
 export default function WelcomeStage() {
-  const { nextStage } = useStore();
+  const { nextStage, createProject, loadProject } = useStore();
+  const [showDashboard, setShowDashboard] = useState(false);
+  const [savedProjectCount, setSavedProjectCount] = useState(0);
+
+  useEffect(() => {
+    // Check for saved projects on mount
+    getAllProjects().then((projects) => {
+      setSavedProjectCount(projects.length);
+    });
+  }, []);
+
+  const handleNewProject = () => {
+    createProject();
+    nextStage();
+    setShowDashboard(false);
+  };
+
+  const handleSelectProject = async (projectId: string) => {
+    await loadProject(projectId);
+    setShowDashboard(false);
+  };
 
   return (
     <div className="animate-fade-in">
@@ -31,6 +54,38 @@ export default function WelcomeStage() {
           Your guided assistant for navigating the permit process for improvements on Lake Tapps Reservoir.
         </p>
       </div>
+
+      {/* Saved Projects Banner */}
+      {savedProjectCount > 0 && (
+        <div className="bg-gradient-to-r from-primary-50 to-blue-50 border border-primary-200 rounded-xl p-4 mb-8">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center">
+                <svg className="w-5 h-5 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                </svg>
+              </div>
+              <div>
+                <p className="font-medium text-slate-900">
+                  You have {savedProjectCount} saved project{savedProjectCount !== 1 ? 's' : ''}
+                </p>
+                <p className="text-sm text-slate-600">
+                  Continue where you left off or start a new application
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowDashboard(true)}
+              className="btn btn-outline"
+            >
+              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+              </svg>
+              View All Projects
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Info Cards */}
       <div className="grid md:grid-cols-3 gap-4 mb-8">
@@ -169,17 +224,37 @@ export default function WelcomeStage() {
       </div>
 
       {/* CTA */}
-      <div className="text-center">
+      <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+        {savedProjectCount > 0 && (
+          <button
+            onClick={() => setShowDashboard(true)}
+            className="btn btn-secondary btn-lg w-full sm:w-auto"
+          >
+            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+            </svg>
+            Open Saved Project
+          </button>
+        )}
         <button
-          onClick={nextStage}
-          className="btn btn-primary btn-lg"
+          onClick={handleNewProject}
+          className="btn btn-primary btn-lg w-full sm:w-auto"
         >
-          Get Started
+          Start New Project
           <svg className="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
           </svg>
         </button>
       </div>
+
+      {/* Project Dashboard Modal */}
+      {showDashboard && (
+        <ProjectDashboard
+          onClose={() => setShowDashboard(false)}
+          onSelectProject={handleSelectProject}
+          onNewProject={handleNewProject}
+        />
+      )}
     </div>
   );
 }

@@ -1,7 +1,16 @@
 'use client';
 
 import { useStore } from '@/store/useStore';
-import { useState } from 'react';
+import { useState, useCallback, useMemo } from 'react';
+import { CompletionIndicator } from '@/components/ui/FormField';
+import { SectionHelp } from '@/components/ui/HelpTooltip';
+import { STAGE_HELP, FIELD_HELP } from '@/lib/helpContent';
+import {
+  propertyOwnerSchema,
+  validatePropertyOwner,
+  checkPropertyOwnerCompletion,
+  validateField,
+} from '@/lib/validation';
 
 interface FormErrors {
   [key: string]: string;
@@ -12,37 +21,20 @@ export default function PropertyOwnerStage() {
   const [errors, setErrors] = useState<FormErrors>({});
   const [touched, setTouched] = useState<Set<string>>(new Set());
 
+  // Memoize completion status
+  const completionStatus = useMemo(() => {
+    if (!project) return null;
+    return checkPropertyOwnerCompletion(project.owner);
+  }, [project]);
+
+  const handleValidateField = useCallback((name: string, value: string) => {
+    const error = validateField(propertyOwnerSchema, name, value);
+    return error;
+  }, []);
+
   if (!project) return null;
 
   const { owner } = project;
-
-  const validateField = (name: string, value: string): string => {
-    switch (name) {
-      case 'firstName':
-      case 'lastName':
-        if (!value.trim()) return 'This field is required';
-        break;
-      case 'email':
-        if (!value.trim()) return 'Email is required';
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return 'Please enter a valid email address';
-        break;
-      case 'phone':
-        if (!value.trim()) return 'Phone number is required';
-        if (!/^[\d\s\-\(\)]+$/.test(value)) return 'Please enter a valid phone number';
-        break;
-      case 'address':
-        if (!value.trim()) return 'Address is required';
-        break;
-      case 'city':
-        if (!value.trim()) return 'City is required';
-        break;
-      case 'zip':
-        if (!value.trim()) return 'ZIP code is required';
-        if (!/^\d{5}(-\d{4})?$/.test(value)) return 'Please enter a valid ZIP code';
-        break;
-    }
-    return '';
-  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
@@ -51,17 +43,17 @@ export default function PropertyOwnerStage() {
     updateOwner({ [name]: newValue });
 
     // Validate on change if field was touched
-    if (touched.has(name)) {
-      const error = validateField(name, value);
-      setErrors((prev) => ({ ...prev, [name]: error }));
+    if (touched.has(name) && typeof newValue === 'string') {
+      const error = handleValidateField(name, newValue);
+      setErrors((prev) => ({ ...prev, [name]: error || '' }));
     }
   };
 
   const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setTouched((prev) => new Set(prev).add(name));
-    const error = validateField(name, value);
-    setErrors((prev) => ({ ...prev, [name]: error }));
+    const error = handleValidateField(name, value);
+    setErrors((prev) => ({ ...prev, [name]: error || '' }));
     saveProject();
   };
 
@@ -77,6 +69,16 @@ export default function PropertyOwnerStage() {
     updateOwner({ phone: formatted });
   };
 
+  // Validate all fields before leaving the stage
+  const validateAll = () => {
+    const result = validatePropertyOwner(owner);
+    if (!result.success && result.errors) {
+      setErrors(result.errors);
+      return false;
+    }
+    return true;
+  };
+
   return (
     <div className="animate-fade-in">
       <div className="mb-8">
@@ -87,6 +89,23 @@ export default function PropertyOwnerStage() {
           Enter the property owner&apos;s contact information. This will be used on all permit applications.
         </p>
       </div>
+
+      {/* Section Help */}
+      <SectionHelp
+        title={STAGE_HELP.property_owner.title}
+        description={STAGE_HELP.property_owner.description}
+        tips={STAGE_HELP.property_owner.tips}
+      />
+
+      {/* Completion Indicator */}
+      {completionStatus && (
+        <CompletionIndicator
+          completedFields={completionStatus.completedFields}
+          totalFields={completionStatus.totalFields}
+          missingFields={completionStatus.missingFields}
+          className="mb-6"
+        />
+      )}
 
       <div className="card mb-6">
         <h2 className="text-lg font-semibold text-slate-900 mb-4">Contact Information</h2>
@@ -109,7 +128,12 @@ export default function PropertyOwnerStage() {
               aria-describedby={errors.firstName ? 'firstName-error' : undefined}
             />
             {errors.firstName && (
-              <p id="firstName-error" className="mt-1 text-sm text-red-600">{errors.firstName}</p>
+              <p id="firstName-error" className="mt-1 text-sm text-red-600 flex items-center gap-1">
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                {errors.firstName}
+              </p>
             )}
           </div>
 
@@ -129,7 +153,12 @@ export default function PropertyOwnerStage() {
               aria-invalid={!!errors.lastName}
             />
             {errors.lastName && (
-              <p className="mt-1 text-sm text-red-600">{errors.lastName}</p>
+              <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                {errors.lastName}
+              </p>
             )}
           </div>
 
@@ -149,7 +178,12 @@ export default function PropertyOwnerStage() {
               aria-invalid={!!errors.email}
             />
             {errors.email && (
-              <p className="mt-1 text-sm text-red-600">{errors.email}</p>
+              <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                {errors.email}
+              </p>
             )}
           </div>
 
@@ -165,12 +199,17 @@ export default function PropertyOwnerStage() {
               value={owner.phone}
               onChange={handlePhoneChange}
               onBlur={handleBlur}
-              placeholder="(xxx) xxx-xxxx"
+              placeholder="(253) 555-1234"
               className={`w-full ${errors.phone ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20' : ''}`}
               aria-invalid={!!errors.phone}
             />
             {errors.phone && (
-              <p className="mt-1 text-sm text-red-600">{errors.phone}</p>
+              <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                {errors.phone}
+              </p>
             )}
           </div>
         </div>
@@ -196,7 +235,12 @@ export default function PropertyOwnerStage() {
               aria-invalid={!!errors.address}
             />
             {errors.address && (
-              <p className="mt-1 text-sm text-red-600">{errors.address}</p>
+              <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                {errors.address}
+              </p>
             )}
           </div>
 
@@ -217,7 +261,12 @@ export default function PropertyOwnerStage() {
                 aria-invalid={!!errors.city}
               />
               {errors.city && (
-                <p className="mt-1 text-sm text-red-600">{errors.city}</p>
+                <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  {errors.city}
+                </p>
               )}
             </div>
 
@@ -257,7 +306,12 @@ export default function PropertyOwnerStage() {
                 aria-invalid={!!errors.zip}
               />
               {errors.zip && (
-                <p className="mt-1 text-sm text-red-600">{errors.zip}</p>
+                <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  {errors.zip}
+                </p>
               )}
             </div>
           </div>
@@ -269,8 +323,7 @@ export default function PropertyOwnerStage() {
 
         <div>
           <label htmlFor="parcelNumber" className="block text-sm font-medium text-slate-700 mb-1">
-            Parcel Number
-            <span className="text-slate-500 font-normal ml-2">(if known)</span>
+            Parcel Number <span className="text-red-500">*</span>
           </label>
           <input
             type="text"
@@ -279,12 +332,31 @@ export default function PropertyOwnerStage() {
             value={owner.parcelNumber}
             onChange={handleChange}
             onBlur={handleBlur}
-            placeholder="e.g., 0123456789"
-            className="w-full max-w-md"
+            placeholder="e.g., 0420062001"
+            maxLength={10}
+            className={`w-full max-w-md ${errors.parcelNumber ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20' : ''}`}
+            aria-invalid={!!errors.parcelNumber}
           />
-          <p className="mt-1 text-sm text-slate-500">
-            You can find this on your property tax statement or at the Pierce County Assessor website.
-          </p>
+          {errors.parcelNumber ? (
+            <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+              {errors.parcelNumber}
+            </p>
+          ) : (
+            <p className="mt-1 text-sm text-slate-500">
+              Pierce County parcel numbers are 10 digits. Find yours on your property tax statement or at the{' '}
+              <a
+                href="https://atip.piercecountywa.gov/app/parcelSearch"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary-600 hover:underline"
+              >
+                Pierce County Assessor website
+              </a>.
+            </p>
+          )}
         </div>
       </div>
 

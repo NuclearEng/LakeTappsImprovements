@@ -6,6 +6,10 @@ import DrawingCanvas from './DrawingCanvas';
 import DrawingToolbar, { TOOL_PROMPTS } from './DrawingToolbar';
 import MeasurementInput, { Measurement } from './MeasurementInput';
 import LabelInput, { Label } from './LabelInput';
+import BackgroundImageControls, {
+  BackgroundImageSettings,
+  DEFAULT_BACKGROUND_SETTINGS,
+} from './BackgroundImageControls';
 import type { SitePlanDrawing, ParcelData, DrawingToolType, DrawingPoint } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -37,6 +41,11 @@ export default function SitePlanEditor({ onSave, onExport }: SitePlanEditorProps
   } | null>(null);
   const [showLabelInput, setShowLabelInput] = useState(false);
   const [labelPosition, setLabelPosition] = useState<DrawingPoint | null>(null);
+
+  // Background image state
+  const [backgroundSettings, setBackgroundSettings] = useState<BackgroundImageSettings>(
+    DEFAULT_BACKGROUND_SETTINGS
+  );
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -180,7 +189,7 @@ export default function SitePlanEditor({ onSave, onExport }: SitePlanEditorProps
     }
   };
 
-  // Import aerial image
+  // Import aerial image (quick add)
   const handleImportImage = () => {
     fileInputRef.current?.click();
   };
@@ -195,6 +204,39 @@ export default function SitePlanEditor({ onSave, onExport }: SitePlanEditorProps
       (window as any).drawingCanvas?.addImage?.(imageData);
     };
     reader.readAsDataURL(file);
+  };
+
+  // Background image handlers
+  const handleBackgroundSettingsChange = (newSettings: BackgroundImageSettings) => {
+    setBackgroundSettings(newSettings);
+
+    // Live preview - update background image as settings change
+    if (newSettings.imageData) {
+      (window as any).drawingCanvas?.updateBackgroundImage?.({
+        opacity: newSettings.opacity,
+        scale: newSettings.scale,
+        offsetX: newSettings.offsetX,
+        offsetY: newSettings.offsetY,
+        rotation: newSettings.rotation,
+        locked: newSettings.locked,
+      });
+    }
+  };
+
+  const handleApplyBackground = () => {
+    if (backgroundSettings.imageData) {
+      (window as any).drawingCanvas?.setBackgroundImage?.(
+        backgroundSettings.imageData,
+        {
+          opacity: backgroundSettings.opacity,
+          scale: backgroundSettings.scale,
+          offsetX: backgroundSettings.offsetX,
+          offsetY: backgroundSettings.offsetY,
+          rotation: backgroundSettings.rotation,
+          locked: backgroundSettings.locked,
+        }
+      );
+    }
   };
 
   // Handle dimension request from canvas
@@ -365,9 +407,16 @@ export default function SitePlanEditor({ onSave, onExport }: SitePlanEditorProps
 
       {/* Drawing Area */}
       <div className="flex gap-4">
-        {/* Toolbar */}
-        <div className="w-64 flex-shrink-0">
+        {/* Left Panel - Toolbar and Background Controls */}
+        <div className="w-64 flex-shrink-0 space-y-4">
           <DrawingToolbar onPromptChange={setCurrentPrompt} />
+
+          {/* Background Image Controls */}
+          <BackgroundImageControls
+            settings={backgroundSettings}
+            onSettingsChange={handleBackgroundSettingsChange}
+            onApplyAsBackground={handleApplyBackground}
+          />
         </div>
 
         {/* Canvas */}
