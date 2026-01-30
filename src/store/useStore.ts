@@ -131,6 +131,9 @@ interface AppState {
   clearDrawingClipboard: () => void;
   copyToClipboard: (objects: DrawingObject[]) => void;
   pasteFromClipboard: () => DrawingObject[];
+  pushCanvasSnapshot: (json: string) => void;
+  getSnapshotForUndo: () => string | null;
+  getSnapshotForRedo: () => string | null;
 }
 
 // Legacy stages (for backwards compatibility)
@@ -705,6 +708,8 @@ export const useStore = create<AppState>((set, get) => ({
     historyIndex: -1,
     clipboard: [],
     isModified: false,
+    canvasSnapshots: [],
+    snapshotIndex: -1,
   },
 
   // Drawing actions
@@ -716,6 +721,8 @@ export const useStore = create<AppState>((set, get) => ({
         isModified: false,
         history: [],
         historyIndex: -1,
+        canvasSnapshots: [],
+        snapshotIndex: -1,
       },
     }));
   },
@@ -792,20 +799,29 @@ export const useStore = create<AppState>((set, get) => ({
     }));
   },
 
-  updateDrawingObjects: (objects) => {
-    set((state) => ({
-      drawingState: {
-        ...state.drawingState,
-        currentDrawing: state.drawingState.currentDrawing
-          ? {
-              ...state.drawingState.currentDrawing,
-              objects,
-              updatedAt: new Date().toISOString(),
-            }
-          : null,
-        isModified: true,
-      },
-    }));
+  updateDrawingObjects: (newObjects) => {
+    set((state) => {
+      const existing = state.drawingState.currentDrawing?.objects || [];
+      const merged = [...existing];
+      for (const obj of newObjects) {
+        const idx = merged.findIndex(o => o.id === obj.id);
+        if (idx >= 0) merged[idx] = obj;
+        else merged.push(obj);
+      }
+      return {
+        drawingState: {
+          ...state.drawingState,
+          currentDrawing: state.drawingState.currentDrawing
+            ? {
+                ...state.drawingState.currentDrawing,
+                objects: merged,
+                updatedAt: new Date().toISOString(),
+              }
+            : null,
+          isModified: true,
+        },
+      };
+    });
   },
 
   addToDrawingHistory: (entry) => {
@@ -894,6 +910,52 @@ export const useStore = create<AppState>((set, get) => ({
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }));
+  },
+
+  pushCanvasSnapshot: (json: string) => {
+    set((state) => {
+      const { canvasSnapshots, snapshotIndex } = state.drawingState;
+      // Truncate forward history on new action
+      const truncated = canvasSnapshots.slice(0, snapshotIndex + 1);
+      truncated.push(json);
+      // Cap at 50 snapshots
+      const capped = truncated.length > 50 ? truncated.slice(truncated.length - 50) : truncated;
+      return {
+        drawingState: {
+          ...state.drawingState,
+          canvasSnapshots: capped,
+          snapshotIndex: capped.length - 1,
+        },
+      };
+    });
+  },
+
+  getSnapshotForUndo: () => {
+    const { drawingState } = get();
+    const { canvasSnapshots, snapshotIndex } = drawingState;
+    if (snapshotIndex <= 0) return null;
+    const newIndex = snapshotIndex - 1;
+    set((state) => ({
+      drawingState: {
+        ...state.drawingState,
+        snapshotIndex: newIndex,
+      },
+    }));
+    return canvasSnapshots[newIndex];
+  },
+
+  getSnapshotForRedo: () => {
+    const { drawingState } = get();
+    const { canvasSnapshots, snapshotIndex } = drawingState;
+    if (snapshotIndex >= canvasSnapshots.length - 1) return null;
+    const newIndex = snapshotIndex + 1;
+    set((state) => ({
+      drawingState: {
+        ...state.drawingState,
+        snapshotIndex: newIndex,
+      },
+    }));
+    return canvasSnapshots[newIndex];
   },
 }));
 

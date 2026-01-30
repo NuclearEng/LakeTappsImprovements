@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useStore } from '@/store/useStore';
 import DrawingCanvas from './DrawingCanvas';
+import type { DrawingCanvasHandle } from './DrawingCanvas';
 import DrawingToolbar, { TOOL_PROMPTS } from './DrawingToolbar';
 import MeasurementInput, { Measurement } from './MeasurementInput';
 import LabelInput, { Label } from './LabelInput';
@@ -27,6 +28,8 @@ export default function SitePlanEditor({ onSave, onExport }: SitePlanEditorProps
   const [scaleValue, setScaleValue] = useState('10');
   const [currentPrompt, setCurrentPrompt] = useState<string>(TOOL_PROMPTS['select']);
   const [cursorPosition, setCursorPosition] = useState<{ x: number; y: number } | null>(null);
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [containerWidth, setContainerWidth] = useState(800);
 
   // Measurement and label input state
   const [showMeasurementInput, setShowMeasurementInput] = useState(false);
@@ -39,14 +42,31 @@ export default function SitePlanEditor({ onSave, onExport }: SitePlanEditorProps
   const [labelPosition, setLabelPosition] = useState<DrawingPoint | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const canvasRef = useRef<DrawingCanvasHandle>(null);
+  const canvasContainerRef = useRef<HTMLDivElement>(null);
 
-  // Handle keyboard shortcuts for tools
+  // Responsive canvas sizing via ResizeObserver
+  useEffect(() => {
+    const container = canvasContainerRef.current;
+    if (!container) return;
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const width = entry.contentRect.width;
+        if (width > 0) {
+          setContainerWidth(Math.floor(width));
+        }
+      }
+    });
+
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
+
+  // Handle keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't trigger shortcuts when typing in inputs
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
-        return;
-      }
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
       const shortcuts: Record<string, DrawingToolType> = {
         'v': 'select',
@@ -63,30 +83,30 @@ export default function SitePlanEditor({ onSave, onExport }: SitePlanEditorProps
 
       const tool = shortcuts[e.key.toLowerCase()];
       if (tool) {
-        (window as any).drawingCanvas?.setTool?.(tool);
+        canvasRef.current?.setTool(tool);
       }
 
       // Undo/Redo
       if (e.ctrlKey || e.metaKey) {
         if (e.key === 'z') {
           e.preventDefault();
-          (window as any).drawingCanvas?.undo?.();
+          canvasRef.current?.undo();
         } else if (e.key === 'y') {
           e.preventDefault();
-          (window as any).drawingCanvas?.redo?.();
+          canvasRef.current?.redo();
         }
       }
 
       // Delete selected
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (!(e.target instanceof HTMLInputElement)) {
-          (window as any).drawingCanvas?.deleteSelected?.();
+          canvasRef.current?.deleteSelected();
         }
       }
 
       // Escape to cancel
       if (e.key === 'Escape') {
-        (window as any).drawingCanvas?.cancelCurrentOperation?.();
+        canvasRef.current?.cancelCurrentOperation();
       }
     };
 
@@ -99,7 +119,7 @@ export default function SitePlanEditor({ onSave, onExport }: SitePlanEditorProps
     initializeDrawing({
       id: uuidv4(),
       name: 'Untitled Site Plan',
-      canvasWidth: 800,
+      canvasWidth: containerWidth,
       canvasHeight: 600,
       scale: {
         pixelsPerFoot: 10,
@@ -134,7 +154,6 @@ export default function SitePlanEditor({ onSave, onExport }: SitePlanEditorProps
     setParcelError(null);
 
     try {
-      // Pierce County GIS API endpoint
       const apiUrl = `https://gisdata.piercecountywa.gov/arcgis/rest/services/Property/Parcels/MapServer/0/query?where=PARCEL_ID='${encodeURIComponent(parcelNumber)}'&outFields=*&f=json`;
 
       const response = await fetch(apiUrl);
@@ -145,7 +164,6 @@ export default function SitePlanEditor({ onSave, onExport }: SitePlanEditorProps
         const attributes = feature.attributes;
         const geometry = feature.geometry;
 
-        // Convert geometry to drawing points if available
         const boundaryPoints = geometry?.rings?.[0]?.map((coord: number[]) => ({
           x: coord[0],
           y: coord[1],
@@ -161,7 +179,6 @@ export default function SitePlanEditor({ onSave, onExport }: SitePlanEditorProps
           source: 'pierce_county',
         };
 
-        // Update current drawing with parcel data
         if (currentDrawing) {
           initializeDrawing({
             ...currentDrawing,
@@ -192,7 +209,7 @@ export default function SitePlanEditor({ onSave, onExport }: SitePlanEditorProps
     const reader = new FileReader();
     reader.onload = (e) => {
       const imageData = e.target?.result as string;
-      (window as any).drawingCanvas?.addImage?.(imageData);
+      canvasRef.current?.addImage(imageData);
     };
     reader.readAsDataURL(file);
   };
@@ -206,7 +223,7 @@ export default function SitePlanEditor({ onSave, onExport }: SitePlanEditorProps
   // Handle measurement input submission
   const handleMeasurementSubmit = (measurement: Measurement) => {
     if (measurementData) {
-      (window as any).drawingCanvas?.addMeasurement?.(
+      canvasRef.current?.addMeasurement(
         measurementData.start,
         measurementData.end,
         measurement
@@ -225,7 +242,7 @@ export default function SitePlanEditor({ onSave, onExport }: SitePlanEditorProps
   // Handle label input submission
   const handleLabelSubmit = (label: Label) => {
     if (labelPosition) {
-      (window as any).drawingCanvas?.addLabel?.(label.text, labelPosition, label.style);
+      canvasRef.current?.addLabel(label.text, labelPosition, label.style as unknown as Record<string, unknown>);
     }
     setShowLabelInput(false);
     setLabelPosition(null);
@@ -233,21 +250,21 @@ export default function SitePlanEditor({ onSave, onExport }: SitePlanEditorProps
 
   // Add text annotation (quick add via toolbar button)
   const handleAddText = () => {
-    setLabelPosition({ x: 400, y: 300 }); // Center of canvas
+    setLabelPosition({ x: 400, y: 300 });
     setShowLabelInput(true);
   };
 
   // Add measurement (via toolbar button)
   const handleAddMeasurement = () => {
-    (window as any).drawingCanvas?.setTool?.('dimension');
+    canvasRef.current?.setTool('dimension');
   };
 
   // Save drawing
   const handleSave = () => {
     if (!currentDrawing) return;
 
-    const json = (window as any).drawingCanvas?.exportToJSON?.();
-    const image = (window as any).drawingCanvas?.exportToImage?.();
+    const json = canvasRef.current?.exportToJSON();
+    const image = canvasRef.current?.exportToImage();
 
     if (json && image) {
       const updatedDrawing: SitePlanDrawing = {
@@ -266,11 +283,9 @@ export default function SitePlanEditor({ onSave, onExport }: SitePlanEditorProps
 
   // Export drawing
   const handleExport = () => {
-    const image = (window as any).drawingCanvas?.exportToImage?.();
+    const image = canvasRef.current?.exportToImage();
     if (image) {
       onExport?.(image);
-
-      // Also trigger download
       const link = document.createElement('a');
       link.download = `${currentDrawing?.name || 'site-plan'}.png`;
       link.href = image;
@@ -290,14 +305,30 @@ export default function SitePlanEditor({ onSave, onExport }: SitePlanEditorProps
   };
 
   // Load saved drawing
-  const handleLoadDrawing = (drawing: SitePlanDrawing) => {
+  const handleLoadDrawing = async (drawing: SitePlanDrawing) => {
     initializeDrawing(drawing);
     if (drawing.fabricCanvasJson) {
-      setTimeout(() => {
-        (window as any).drawingCanvas?.loadFromJSON?.(drawing.fabricCanvasJson);
+      // Wait for canvas to be initialized
+      setTimeout(async () => {
+        await canvasRef.current?.loadFromJSON(drawing.fabricCanvasJson!);
       }, 100);
     }
   };
+
+  // Zoom callbacks
+  const handleZoomChange = useCallback((zoom: number) => {
+    setZoomLevel(zoom);
+  }, []);
+
+  // Toolbar action callbacks
+  const handleUndo = useCallback(() => { canvasRef.current?.undo(); }, []);
+  const handleRedo = useCallback(() => { canvasRef.current?.redo(); }, []);
+  const handleDelete = useCallback(() => { canvasRef.current?.deleteSelected(); }, []);
+  const handleClear = useCallback(() => {
+    if (confirm('Clear all drawings?')) {
+      canvasRef.current?.clearCanvas();
+    }
+  }, []);
 
   return (
     <div className="site-plan-editor">
@@ -367,11 +398,17 @@ export default function SitePlanEditor({ onSave, onExport }: SitePlanEditorProps
       <div className="flex gap-4">
         {/* Toolbar */}
         <div className="w-64 flex-shrink-0">
-          <DrawingToolbar onPromptChange={setCurrentPrompt} />
+          <DrawingToolbar
+            onPromptChange={setCurrentPrompt}
+            onUndo={handleUndo}
+            onRedo={handleRedo}
+            onDelete={handleDelete}
+            onClear={handleClear}
+          />
         </div>
 
         {/* Canvas */}
-        <div className="flex-1">
+        <div className="flex-1" ref={canvasContainerRef}>
           {/* Canvas Toolbar */}
           <div className="flex items-center justify-between mb-2 p-2 bg-slate-100 rounded-lg">
             <div className="flex gap-2">
@@ -402,6 +439,38 @@ export default function SitePlanEditor({ onSave, onExport }: SitePlanEditorProps
               />
             </div>
             <div className="flex items-center gap-2">
+              {/* Zoom Controls */}
+              <button
+                onClick={() => canvasRef.current?.zoomOut()}
+                className="btn btn-sm btn-secondary px-2"
+                title="Zoom Out"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+                </svg>
+              </button>
+              <span className="text-sm font-mono text-slate-700 min-w-[3rem] text-center">
+                {Math.round(zoomLevel * 100)}%
+              </span>
+              <button
+                onClick={() => canvasRef.current?.zoomIn()}
+                className="btn btn-sm btn-secondary px-2"
+                title="Zoom In"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+              </button>
+              <button
+                onClick={() => canvasRef.current?.resetZoom()}
+                className="btn btn-sm btn-secondary px-2"
+                title="Reset Zoom"
+              >
+                Fit
+              </button>
+
+              <span className="text-sm text-slate-400 mx-1">|</span>
+
               <span className="text-sm text-slate-600">
                 Scale: {currentDrawing?.scale?.scaleRatio || '1 inch = 10 feet'}
               </span>
@@ -416,7 +485,8 @@ export default function SitePlanEditor({ onSave, onExport }: SitePlanEditorProps
 
           {/* Canvas Container */}
           <DrawingCanvas
-            width={800}
+            ref={canvasRef}
+            width={containerWidth}
             height={600}
             onObjectsChange={(_objects) => {
               // Handle objects change
@@ -427,6 +497,7 @@ export default function SitePlanEditor({ onSave, onExport }: SitePlanEditorProps
             }}
             onDimensionRequest={handleDimensionRequest}
             onLabelRequest={handleLabelRequest}
+            onZoomChange={handleZoomChange}
           />
 
           {/* Canvas Footer - OMAX Layout Style Status Bar */}
@@ -460,6 +531,9 @@ export default function SitePlanEditor({ onSave, onExport }: SitePlanEditorProps
                     {' '}Y: <span className="text-white">{cursorPosition.y.toFixed(1)}</span>
                   </span>
                 )}
+                <span className="text-slate-400">
+                  Zoom: <span className="text-white">{Math.round(zoomLevel * 100)}%</span>
+                </span>
                 <span className="text-slate-400">
                   Scale: <span className="text-white">{currentDrawing?.scale?.scaleRatio || '1:10'}</span>
                 </span>

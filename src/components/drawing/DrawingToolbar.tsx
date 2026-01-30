@@ -15,9 +15,9 @@ const TOOL_PROMPTS: Record<DrawingToolType, string> = {
   triangle: 'Click and drag to draw a triangle.',
   polyline: 'Click to add points. Double-click to finish. ESC to cancel.',
   polygon: 'Click to add vertices. Double-click to close shape.',
-  arc: 'Click center, then start point, then end point for arc.',
-  curve: 'Click start, control point, then end point for bezier curve.',
-  spline: 'Click to add control points. Double-click to finish spline.',
+  arc: 'Arc tool is not available.',
+  curve: 'Curve tool is not available.',
+  spline: 'Spline tool is not available.',
   dimension: 'Click two points to create a dimension line with measurement.',
   text: 'Click to place text. Type your annotation and press Enter.',
   image: 'Click to place imported image on canvas.',
@@ -73,9 +73,13 @@ function ToolButton({ tool, icon, label, active, onClick, shortcut }: ToolButton
 
 interface DrawingToolbarProps {
   onPromptChange?: (prompt: string) => void;
+  onUndo?: () => void;
+  onRedo?: () => void;
+  onDelete?: () => void;
+  onClear?: () => void;
 }
 
-export default function DrawingToolbar({ onPromptChange }: DrawingToolbarProps) {
+export default function DrawingToolbar({ onPromptChange, onUndo, onRedo, onDelete, onClear }: DrawingToolbarProps) {
   const {
     drawingState,
     setActiveTool,
@@ -173,7 +177,7 @@ export default function DrawingToolbar({ onPromptChange }: DrawingToolbarProps) 
       ],
     },
     {
-      category: 'Curves & Polygons',
+      category: 'Multi-Point',
       items: [
         {
           tool: 'polyline',
@@ -190,24 +194,6 @@ export default function DrawingToolbar({ onPromptChange }: DrawingToolbarProps) 
           icon: (
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <polygon points="12,2 22,8.5 18,21 6,21 2,8.5" strokeWidth={2} />
-            </svg>
-          ),
-        },
-        {
-          tool: 'arc',
-          label: 'Arc',
-          icon: (
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path d="M4 12 A8 8 0 0 1 20 12" strokeWidth={2} strokeLinecap="round" />
-            </svg>
-          ),
-        },
-        {
-          tool: 'curve',
-          label: 'Curve',
-          icon: (
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path d="M4 20 Q12 4 20 20" strokeWidth={2} strokeLinecap="round" />
             </svg>
           ),
         },
@@ -419,7 +405,7 @@ export default function DrawingToolbar({ onPromptChange }: DrawingToolbarProps) 
         <div className="text-xs font-semibold text-slate-500 uppercase">Actions</div>
         <div className="grid grid-cols-2 gap-2">
           <button
-            onClick={() => (window as any).drawingCanvas?.undo?.()}
+            onClick={() => onUndo?.()}
             className="btn btn-sm btn-secondary"
           >
             <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -428,7 +414,7 @@ export default function DrawingToolbar({ onPromptChange }: DrawingToolbarProps) 
             Undo
           </button>
           <button
-            onClick={() => (window as any).drawingCanvas?.redo?.()}
+            onClick={() => onRedo?.()}
             className="btn btn-sm btn-secondary"
           >
             <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -437,7 +423,7 @@ export default function DrawingToolbar({ onPromptChange }: DrawingToolbarProps) 
             Redo
           </button>
           <button
-            onClick={() => (window as any).drawingCanvas?.deleteSelected?.()}
+            onClick={() => onDelete?.()}
             className="btn btn-sm btn-secondary text-red-600"
           >
             <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -446,11 +432,7 @@ export default function DrawingToolbar({ onPromptChange }: DrawingToolbarProps) 
             Delete
           </button>
           <button
-            onClick={() => {
-              if (confirm('Clear all drawings?')) {
-                (window as any).drawingCanvas?.clearCanvas?.();
-              }
-            }}
+            onClick={() => onClear?.()}
             className="btn btn-sm btn-secondary text-red-600"
           >
             <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -491,6 +473,7 @@ export default function DrawingToolbar({ onPromptChange }: DrawingToolbarProps) 
           <li>• Delete/Backspace to remove selected</li>
           <li>• Ctrl+Z to undo, Ctrl+Y to redo</li>
           <li>• Hold Shift for constrained shapes</li>
+          <li>• Mouse wheel to zoom in/out</li>
         </ul>
       </div>
     </div>

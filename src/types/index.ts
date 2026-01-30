@@ -505,4 +505,6 @@ export interface DrawingState {
   historyIndex: number;
   clipboard: DrawingObject[];
   isModified: boolean;
+  canvasSnapshots: string[];
+  snapshotIndex: number;
 }

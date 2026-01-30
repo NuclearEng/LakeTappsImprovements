@@ -1,13 +1,37 @@
 'use client';
 
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useRef, useCallback, useState, forwardRef, useImperativeHandle } from 'react';
 import { useStore } from '@/store/useStore';
-import type { DrawingToolType, DrawingPoint, DrawingObject, DrawingLayerType } from '@/types';
+import type { DrawingToolType, DrawingPoint, DrawingObject, DrawingLayerType, DrawingStyle } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
 
-// Fabric.js types
+// Fabric.js types — the module is loaded dynamically
+type FabricModule = typeof import('fabric');
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type FabricCanvas = any;
-type FabricObject = any;
+type FabricObject = import('fabric').FabricObject;
+
+export interface DrawingCanvasHandle {
+  addText: (text: string, position?: DrawingPoint, style?: Record<string, unknown>) => void;
+  addLabel: (text: string, position: DrawingPoint, style: Record<string, unknown>) => void;
+  addDimension: (start: DrawingPoint, end: DrawingPoint, customLabel?: string) => void;
+  addMeasurement: (start: DrawingPoint, end: DrawingPoint, measurement: { value: number; unit: string; displayText: string }) => void;
+  addImage: (imageData: string) => Promise<void>;
+  deleteSelected: () => void;
+  exportToImage: () => string | null;
+  exportToJSON: () => string | null;
+  loadFromJSON: (json: string) => Promise<void>;
+  clearCanvas: () => void;
+  undo: () => Promise<void>;
+  redo: () => Promise<void>;
+  setTool: (tool: DrawingToolType) => void;
+  cancelCurrentOperation: () => void;
+  getCanvas: () => FabricCanvas | null;
+  getScale: () => number;
+  zoomIn: () => void;
+  zoomOut: () => void;
+  resetZoom: () => void;
+}
 
 interface DrawingCanvasProps {
   width?: number;
@@ -17,29 +41,57 @@ interface DrawingCanvasProps {
   onStatusChange?: (status: string) => void;
   onDimensionRequest?: (start: DrawingPoint, end: DrawingPoint, distance: number) => void;
   onLabelRequest?: (position: DrawingPoint) => void;
+  onZoomChange?: (zoom: number) => void;
 }
 
-export default function DrawingCanvas({
-  width = 800,
-  height = 600,
-  onObjectsChange,
-  onCursorMove,
-  onStatusChange,
-  onDimensionRequest,
-  onLabelRequest,
-}: DrawingCanvasProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>(function DrawingCanvas(
+  {
+    width = 800,
+    height = 600,
+    onObjectsChange,
+    onCursorMove,
+    onStatusChange,
+    onDimensionRequest,
+    onLabelRequest,
+    onZoomChange,
+  },
+  ref
+) {
+  const canvasElRef = useRef<HTMLCanvasElement>(null);
   const fabricRef = useRef<FabricCanvas | null>(null);
+  const fabricModuleRef = useRef<FabricModule | null>(null);
   const [isReady, setIsReady] = useState(false);
-  const [fabric, setFabric] = useState<FabricCanvas>(null);
+  const [fabricLoaded, setFabricLoaded] = useState(false);
+
+  // Drawing state refs
   const polylinePointsRef = useRef<DrawingPoint[]>([]);
   const currentShapeRef = useRef<FabricObject | null>(null);
   const polylinePreviewRef = useRef<FabricObject | null>(null);
   const dimensionStartRef = useRef<DrawingPoint | null>(null);
   const dimensionPreviewRef = useRef<FabricObject | null>(null);
-  const isDrawingRef = useRef<boolean>(false);
+  const isDrawingRef = useRef(false);
   const startPointRef = useRef<DrawingPoint | null>(null);
   const activeToolRef = useRef<DrawingToolType>('select');
+  const isShiftDownRef = useRef(false);
+
+  // Pan state refs
+  const isPanningRef = useRef(false);
+  const lastPanPointRef = useRef<{ x: number; y: number } | null>(null);
+
+  // Refs to avoid stale closures
+  const activeStyleRef = useRef<DrawingStyle>({
+    strokeColor: '#000000',
+    strokeWidth: 2,
+    strokeStyle: 'solid',
+    fillColor: 'transparent',
+    fillOpacity: 0.3,
+  });
+  const activeLayerRef = useRef<DrawingLayerType>('proposed_improvements');
+
+  // History refs (canvas JSON snapshots)
+  const historyStackRef = useRef<string[]>([]);
+  const historyIndexRef = useRef(-1);
+  const isLoadingSnapshotRef = useRef(false);
 
   const {
     drawingState,
@@ -47,22 +99,56 @@ export default function DrawingCanvas({
     updateDrawingObjects,
     addToDrawingHistory,
     setSelectedObjects,
+    pushCanvasSnapshot,
+    getSnapshotForUndo,
+    getSnapshotForRedo,
   } = useStore();
 
   const { activeTool, activeStyle, activeLayer, currentDrawing } = drawingState;
 
-  // Keep activeToolRef in sync with activeTool
-  useEffect(() => {
-    activeToolRef.current = activeTool;
-  }, [activeTool]);
+  // Keep refs synced
+  useEffect(() => { activeToolRef.current = activeTool; }, [activeTool]);
+  useEffect(() => { activeStyleRef.current = activeStyle; }, [activeStyle]);
+  useEffect(() => { activeLayerRef.current = activeLayer; }, [activeLayer]);
 
-  // Define callbacks early so they can be used in effects
+  // Shift key tracking
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => { if (e.key === 'Shift') isShiftDownRef.current = true; };
+    const handleKeyUp = (e: KeyboardEvent) => { if (e.key === 'Shift') isShiftDownRef.current = false; };
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
+
   const updateStatus = useCallback((status: string) => {
     onStatusChange?.(status);
   }, [onStatusChange]);
 
-  const saveObjectToState = useCallback((obj: FabricObject) => {
-    const drawingObject = fabricObjectToDrawingObject(obj, activeLayer);
+  // --- Snapshot-based undo/redo ---
+  const pushSnapshot = useCallback(() => {
+    const canvas = fabricRef.current;
+    if (!canvas || isLoadingSnapshotRef.current) return;
+    const json = JSON.stringify(canvas.toJSON(['id', 'isGrid']));
+    // Local history
+    const stack = historyStackRef.current;
+    const idx = historyIndexRef.current;
+    // Truncate forward history
+    const truncated = stack.slice(0, idx + 1);
+    truncated.push(json);
+    // Cap at 50
+    if (truncated.length > 50) truncated.splice(0, truncated.length - 50);
+    historyStackRef.current = truncated;
+    historyIndexRef.current = truncated.length - 1;
+    // Also push to store
+    pushCanvasSnapshot(json);
+  }, [pushCanvasSnapshot]);
+
+  const saveObjectToState = useCallback((obj: any) => {
+    const layer = activeLayerRef.current;
+    const drawingObject = fabricObjectToDrawingObject(obj, layer);
     updateDrawingObjects([drawingObject]);
     addToDrawingHistory({
       timestamp: new Date().toISOString(),
@@ -70,22 +156,25 @@ export default function DrawingCanvas({
       objectIds: [drawingObject.id],
       newState: JSON.stringify(drawingObject),
     });
-  }, [activeLayer, updateDrawingObjects, addToDrawingHistory]);
+    pushSnapshot();
+  }, [updateDrawingObjects, addToDrawingHistory, pushSnapshot]);
 
-  // Load Fabric.js dynamically (client-side only)
+  // --- Load Fabric.js dynamically ---
   useEffect(() => {
     const loadFabric = async () => {
-      const fabricModule = await import('fabric');
-      setFabric(fabricModule);
+      const mod = await import('fabric');
+      fabricModuleRef.current = mod;
+      setFabricLoaded(true);
     };
     loadFabric();
   }, []);
 
-  // Initialize canvas
+  // --- Initialize canvas ---
   useEffect(() => {
-    if (!canvasRef.current || !fabric) return;
+    if (!canvasElRef.current || !fabricLoaded) return;
+    const fabric = fabricModuleRef.current!;
 
-    const canvas = new fabric.Canvas(canvasRef.current, {
+    const canvas = new fabric.Canvas(canvasElRef.current, {
       width,
       height,
       backgroundColor: '#ffffff',
@@ -95,23 +184,80 @@ export default function DrawingCanvas({
 
     fabricRef.current = canvas;
 
-    // Event handlers
+    // Selection events
+    const handleSelectionChange = (e: any) => {
+      const selected = e.selected || [];
+      const ids = selected.map((obj: any) => obj.id).filter(Boolean);
+      setSelectedObjects(ids);
+    };
     canvas.on('selection:created', handleSelectionChange);
     canvas.on('selection:updated', handleSelectionChange);
     canvas.on('selection:cleared', () => setSelectedObjects([]));
-    canvas.on('object:modified', handleObjectModified);
-    canvas.on('object:added', handleObjectAdded);
+
+    // Object modified
+    canvas.on('object:modified', (e: any) => {
+      if (e.target) {
+        const layer = activeLayerRef.current;
+        const drawingObject = fabricObjectToDrawingObject(e.target, layer);
+        updateDrawingObjects([drawingObject]);
+        pushSnapshot();
+      }
+    });
+
+    // Object added — notify parent
+    canvas.on('object:added', () => {
+      if (onObjectsChange && fabricRef.current) {
+        const objects = getCanvasObjects();
+        onObjectsChange(objects);
+      }
+    });
+
+    // Freehand path created
+    canvas.on('path:created', (e: any) => {
+      if (e.path) {
+        e.path.set({ id: uuidv4() });
+        pushSnapshot();
+      }
+    });
+
+    // Mouse wheel zoom
+    canvas.on('mouse:wheel', (opt: any) => {
+      const delta = opt.e.deltaY;
+      let zoom = canvas.getZoom();
+      zoom *= 0.999 ** delta;
+      zoom = Math.min(Math.max(zoom, 0.25), 5.0);
+      const point = new fabric.Point(opt.e.offsetX, opt.e.offsetY);
+      canvas.zoomToPoint(point, zoom);
+      opt.e.preventDefault();
+      opt.e.stopPropagation();
+      onZoomChange?.(zoom);
+    });
+
+    // Cursor tracking
+    canvas.on('mouse:move', (e: any) => {
+      const pt = getPointerFromEvent(e);
+      onCursorMove?.(pt);
+    });
+    canvas.on('mouse:out', () => {
+      onCursorMove?.(null);
+    });
 
     // Load existing drawing if available
     if (currentDrawing?.fabricCanvasJson) {
-      canvas.loadFromJSON(currentDrawing.fabricCanvasJson, () => {
+      isLoadingSnapshotRef.current = true;
+      canvas.loadFromJSON(currentDrawing.fabricCanvasJson).then(() => {
         canvas.renderAll();
+        isLoadingSnapshotRef.current = false;
+        // Take initial snapshot
+        pushSnapshot();
       });
-    }
-
-    // Draw grid if enabled
-    if (currentDrawing?.grid?.enabled) {
-      drawGrid(canvas, currentDrawing.grid.size, currentDrawing.grid.color);
+    } else {
+      // Draw grid if enabled
+      if (currentDrawing?.grid?.enabled) {
+        drawGrid(canvas, currentDrawing.grid.size, currentDrawing.grid.color, fabric);
+      }
+      // Take initial snapshot
+      pushSnapshot();
     }
 
     setIsReady(true);
@@ -120,16 +266,17 @@ export default function DrawingCanvas({
       canvas.dispose();
       fabricRef.current = null;
     };
-  }, [fabric, width, height]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fabricLoaded, width, height]);
 
-  // Handle tool changes
+  // --- Handle tool changes ---
   useEffect(() => {
-    if (!fabricRef.current || !fabric) return;
-
+    if (!fabricRef.current || !fabricLoaded) return;
     const canvas = fabricRef.current;
+    const fabric = fabricModuleRef.current!;
 
-    // Clean up any in-progress drawing when tool changes
-    if (currentShapeRef.current && !currentShapeRef.current.selectable) {
+    // Clean up any in-progress drawing
+    if (currentShapeRef.current) {
       canvas.remove(currentShapeRef.current);
       currentShapeRef.current = null;
     }
@@ -158,88 +305,66 @@ export default function DrawingCanvas({
       canvas.selection = false;
     } else if (activeTool === 'freehand') {
       canvas.isDrawingMode = true;
-      canvas.freeDrawingBrush.color = activeStyle.strokeColor;
-      canvas.freeDrawingBrush.width = activeStyle.strokeWidth;
+      if (canvas.freeDrawingBrush) {
+        canvas.freeDrawingBrush.color = activeStyle.strokeColor;
+        canvas.freeDrawingBrush.width = activeStyle.strokeWidth;
+      }
     } else {
       canvas.defaultCursor = 'crosshair';
     }
-  }, [activeTool, activeStyle, fabric]);
+  }, [activeTool, activeStyle, fabricLoaded]);
 
-  // Mouse event handlers for shape drawing
+  // --- Mouse event handlers ---
   useEffect(() => {
-    if (!fabricRef.current || !fabric || !isReady) return;
-
+    if (!fabricRef.current || !fabricLoaded || !isReady) return;
     const canvas = fabricRef.current;
-
-    // Helper to get pointer from event (Fabric.js 7.x uses e.pointer)
-    const getPointerFromEvent = (e: any): DrawingPoint => {
-      // Fabric.js 7.x provides pointer directly on the event
-      if (e.pointer) {
-        return { x: e.pointer.x, y: e.pointer.y };
-      }
-      // Alternative: use absolutePointer for canvas coordinates
-      if (e.absolutePointer) {
-        return { x: e.absolutePointer.x, y: e.absolutePointer.y };
-      }
-      // Fallback: try scenePoint
-      if (e.scenePoint) {
-        return { x: e.scenePoint.x, y: e.scenePoint.y };
-      }
-      return { x: 0, y: 0 };
-    };
+    const fabric = fabricModuleRef.current!;
 
     const handleMouseDown = (e: any) => {
       const tool = activeToolRef.current;
-      if (tool === 'select' || tool === 'pan' || tool === 'freehand') return;
-
+      const style = activeStyleRef.current;
       const pointer = getPointerFromEvent(e);
-      const startPoint = { x: pointer.x, y: pointer.y };
+      const snappedPointer = snapPointer(pointer);
+
+      // Pan tool
+      if (tool === 'pan') {
+        isPanningRef.current = true;
+        lastPanPointRef.current = { x: e.e.clientX, y: e.e.clientY };
+        canvas.defaultCursor = 'grabbing';
+        return;
+      }
+
+      if (tool === 'select' || tool === 'freehand') return;
+
+      const startPoint = { x: snappedPointer.x, y: snappedPointer.y };
       startPointRef.current = startPoint;
 
-      // Handle dimension tool - two-click mode
+      // Dimension tool
       if (tool === 'dimension') {
         if (!dimensionStartRef.current) {
-          // First click - set start point
           dimensionStartRef.current = startPoint;
           updateStatus('Click second point for dimension end');
-
-          // Create preview line
           dimensionPreviewRef.current = new fabric.Line(
             [startPoint.x, startPoint.y, startPoint.x, startPoint.y],
-            {
-              stroke: '#0066CC',
-              strokeWidth: 2,
-              strokeDashArray: [5, 5],
-              selectable: false,
-              evented: false,
-            }
+            { stroke: '#0066CC', strokeWidth: 2, strokeDashArray: [5, 5], selectable: false, evented: false }
           );
           canvas.add(dimensionPreviewRef.current);
         } else {
-          // Second click - complete dimension
           const start = dimensionStartRef.current;
           const end = startPoint;
-          const distance = Math.sqrt(
-            Math.pow(end.x - start.x, 2) + Math.pow(end.y - start.y, 2)
-          );
-
-          // Remove preview
+          const distance = Math.sqrt((end.x - start.x) ** 2 + (end.y - start.y) ** 2);
           if (dimensionPreviewRef.current) {
             canvas.remove(dimensionPreviewRef.current);
             dimensionPreviewRef.current = null;
           }
-
-          // Request measurement input from parent
           onDimensionRequest?.(start, end, distance);
-
-          // Reset
           dimensionStartRef.current = null;
           updateStatus('Dimension placed. Click to start new dimension.');
         }
         return;
       }
 
-      // Handle text tool - single click to place
+      // Text tool
       if (tool === 'text') {
         onLabelRequest?.(startPoint);
         return;
@@ -247,43 +372,29 @@ export default function DrawingCanvas({
 
       isDrawingRef.current = true;
 
-      // For polyline/polygon, accumulate points on click
+      // Polyline/Polygon
       if (tool === 'polyline' || tool === 'polygon') {
         polylinePointsRef.current.push(startPoint);
+        if (currentShapeRef.current) canvas.remove(currentShapeRef.current);
 
-        // Remove old shape and create new one with updated points
-        // (Fabric.js 7.x requires recreating polyline to update points properly)
-        if (currentShapeRef.current) {
-          canvas.remove(currentShapeRef.current);
-        }
-
-        // Convert points to fabric.Point format for Fabric.js 7.x
         const fabricPoints = polylinePointsRef.current.map(p => ({ x: p.x, y: p.y }));
 
-        // In Fabric.js 7.x, Polyline requires points as array of {x, y} objects
-        // and we need to set left/top based on the bounding box
-        const minX = Math.min(...fabricPoints.map(p => p.x));
-        const minY = Math.min(...fabricPoints.map(p => p.y));
-
         currentShapeRef.current = new fabric.Polyline(fabricPoints, {
-          stroke: activeStyle.strokeColor,
-          strokeWidth: activeStyle.strokeWidth,
-          fill: tool === 'polygon' ? activeStyle.fillColor : 'transparent',
-          opacity: activeStyle.fillOpacity,
+          stroke: style.strokeColor,
+          strokeWidth: style.strokeWidth,
+          fill: tool === 'polygon' ? style.fillColor : 'transparent',
+          opacity: style.fillOpacity,
           selectable: false,
           objectCaching: false,
-          left: minX,
-          top: minY,
         });
         canvas.add(currentShapeRef.current);
         canvas.renderAll();
-
         updateStatus(`${tool === 'polygon' ? 'Polygon' : 'Polyline'}: ${polylinePointsRef.current.length} point(s) - Double-click to finish`);
         return;
       }
 
-      // Create shape based on tool
-      currentShapeRef.current = createShape(tool, startPoint, pointer, activeStyle, fabric);
+      // Create shape
+      currentShapeRef.current = createShape(tool, startPoint, snappedPointer, style, fabric);
       if (currentShapeRef.current) {
         currentShapeRef.current.set({ selectable: false });
         canvas.add(currentShapeRef.current);
@@ -292,37 +403,39 @@ export default function DrawingCanvas({
 
     const handleMouseMove = (e: any) => {
       const tool = activeToolRef.current;
+      const style = activeStyleRef.current;
       const pointer = getPointerFromEvent(e);
+      const snappedPointer = snapPointer(pointer);
 
-      // Update dimension preview line
+      // Pan
+      if (tool === 'pan' && isPanningRef.current && lastPanPointRef.current) {
+        const dx = e.e.clientX - lastPanPointRef.current.x;
+        const dy = e.e.clientY - lastPanPointRef.current.y;
+        const vpt = canvas.viewportTransform;
+        if (vpt) {
+          vpt[4] += dx;
+          vpt[5] += dy;
+          canvas.setViewportTransform(vpt);
+          canvas.requestRenderAll();
+        }
+        lastPanPointRef.current = { x: e.e.clientX, y: e.e.clientY };
+        return;
+      }
+
+      // Dimension preview
       if (tool === 'dimension' && dimensionStartRef.current && dimensionPreviewRef.current) {
-        dimensionPreviewRef.current.set({
-          x2: pointer.x,
-          y2: pointer.y,
-        });
+        dimensionPreviewRef.current.set({ x2: snappedPointer.x, y2: snappedPointer.y });
         canvas.renderAll();
         return;
       }
 
-      // Update polyline/polygon preview line
+      // Polyline preview
       if ((tool === 'polyline' || tool === 'polygon') && polylinePointsRef.current.length > 0) {
         const lastPoint = polylinePointsRef.current[polylinePointsRef.current.length - 1];
-
-        // Remove old preview line
-        if (polylinePreviewRef.current) {
-          canvas.remove(polylinePreviewRef.current);
-        }
-
-        // Create new preview line from last point to current mouse position
+        if (polylinePreviewRef.current) canvas.remove(polylinePreviewRef.current);
         polylinePreviewRef.current = new fabric.Line(
-          [lastPoint.x, lastPoint.y, pointer.x, pointer.y],
-          {
-            stroke: activeStyle.strokeColor,
-            strokeWidth: activeStyle.strokeWidth,
-            strokeDashArray: [5, 5],
-            selectable: false,
-            evented: false,
-          }
+          [lastPoint.x, lastPoint.y, snappedPointer.x, snappedPointer.y],
+          { stroke: style.strokeColor, strokeWidth: style.strokeWidth, strokeDashArray: [5, 5], selectable: false, evented: false }
         );
         canvas.add(polylinePreviewRef.current);
         canvas.renderAll();
@@ -330,13 +443,21 @@ export default function DrawingCanvas({
       }
 
       if (!isDrawingRef.current || !startPointRef.current || !currentShapeRef.current) return;
-
-      updateShape(tool, currentShapeRef.current, startPointRef.current, pointer, fabric);
+      updateShape(tool, currentShapeRef.current, startPointRef.current, snappedPointer, isShiftDownRef.current);
       canvas.renderAll();
     };
 
     const handleMouseUp = () => {
       const tool = activeToolRef.current;
+
+      // Pan
+      if (tool === 'pan') {
+        isPanningRef.current = false;
+        lastPanPointRef.current = null;
+        canvas.defaultCursor = 'grab';
+        return;
+      }
+
       if (tool === 'polyline' || tool === 'polygon') return;
 
       if (currentShapeRef.current) {
@@ -352,53 +473,36 @@ export default function DrawingCanvas({
 
     const handleDoubleClick = () => {
       const tool = activeToolRef.current;
-      // Finish polyline/polygon on double-click
+      const style = activeStyleRef.current;
       if ((tool === 'polyline' || tool === 'polygon') && polylinePointsRef.current.length >= 2) {
-        // Remove the current preview shape and preview line
-        if (currentShapeRef.current) {
-          canvas.remove(currentShapeRef.current);
-        }
-        if (polylinePreviewRef.current) {
-          canvas.remove(polylinePreviewRef.current);
-          polylinePreviewRef.current = null;
-        }
+        if (currentShapeRef.current) canvas.remove(currentShapeRef.current);
+        if (polylinePreviewRef.current) { canvas.remove(polylinePreviewRef.current); polylinePreviewRef.current = null; }
 
-        // Get final points
         const finalPoints = [...polylinePointsRef.current];
-
-        // Close the polygon if needed
         if (tool === 'polygon' && finalPoints.length >= 3) {
-          // Add closing point
           finalPoints.push({ ...finalPoints[0] });
         }
 
-        // Create the final shape
         const fabricPoints = finalPoints.map(p => ({ x: p.x, y: p.y }));
-        const minX = Math.min(...fabricPoints.map(p => p.x));
-        const minY = Math.min(...fabricPoints.map(p => p.y));
 
         const finalShape = new fabric.Polyline(fabricPoints, {
-          stroke: activeStyle.strokeColor,
-          strokeWidth: activeStyle.strokeWidth,
-          fill: tool === 'polygon' ? activeStyle.fillColor : 'transparent',
-          opacity: activeStyle.fillOpacity,
+          stroke: style.strokeColor,
+          strokeWidth: style.strokeWidth,
+          fill: tool === 'polygon' ? style.fillColor : 'transparent',
+          opacity: style.fillOpacity,
           selectable: true,
           objectCaching: false,
-          left: minX,
-          top: minY,
           id: uuidv4(),
-        });
+        } as any);
 
         canvas.add(finalShape);
         finalShape.setCoords();
         saveObjectToState(finalShape);
         canvas.renderAll();
 
-        // Reset state
         polylinePointsRef.current = [];
         currentShapeRef.current = null;
         isDrawingRef.current = false;
-
         updateStatus(`${tool === 'polygon' ? 'Polygon' : 'Polyline'} completed`);
       }
     };
@@ -414,97 +518,72 @@ export default function DrawingCanvas({
       canvas.off('mouse:up', handleMouseUp);
       canvas.off('mouse:dblclick', handleDoubleClick);
     };
-  }, [activeStyle, activeLayer, isReady, fabric, onDimensionRequest, onLabelRequest, updateStatus, saveObjectToState]);
+  }, [isReady, fabricLoaded, onDimensionRequest, onLabelRequest, updateStatus, saveObjectToState, onZoomChange]);
 
-  const handleSelectionChange = useCallback((e: any) => {
-    const selected = e.selected || [];
-    const ids = selected.map((obj: FabricObject) => obj.id).filter(Boolean);
-    setSelectedObjects(ids);
-  }, [setSelectedObjects]);
-
-  const handleObjectModified = useCallback((e: any) => {
-    if (e.target) {
-      saveObjectToState(e.target);
+  // --- Snap helper ---
+  const snapPointer = (pointer: DrawingPoint): DrawingPoint => {
+    if (currentDrawing?.grid?.snapToGrid && currentDrawing.grid.enabled) {
+      const gridSize = currentDrawing.grid.size;
+      return {
+        x: Math.round(pointer.x / gridSize) * gridSize,
+        y: Math.round(pointer.y / gridSize) * gridSize,
+      };
     }
-  }, []);
+    return pointer;
+  };
 
-  const handleObjectAdded = useCallback(() => {
-    if (onObjectsChange && fabricRef.current) {
-      const objects = getCanvasObjects();
-      onObjectsChange(objects);
-    }
-  }, [onObjectsChange]);
-
+  // --- Canvas objects helper ---
   const getCanvasObjects = (): DrawingObject[] => {
     if (!fabricRef.current) return [];
     const objects = fabricRef.current.getObjects();
     return objects
-      .filter((obj: FabricObject) => !obj.isGrid)
-      .map((obj: FabricObject) => fabricObjectToDrawingObject(obj, activeLayer));
+      .filter((obj: any) => !(obj as any).isGrid)
+      .map((obj: any) => fabricObjectToDrawingObject(obj, activeLayerRef.current));
   };
 
-  // Exposed methods
-  const addText = useCallback((text: string, position?: DrawingPoint, style?: {
-    fontSize?: number;
-    fontFamily?: string;
-    fontWeight?: string;
-    color?: string;
-    backgroundColor?: string;
-    hasBackground?: boolean;
-    hasOutline?: boolean;
-    outlineColor?: string;
-  }) => {
+  // --- Exposed methods ---
+  const addText = useCallback((text: string, position?: DrawingPoint, style?: Record<string, unknown>) => {
+    const fabric = fabricModuleRef.current;
     if (!fabricRef.current || !fabric) return;
-
+    const s = activeStyleRef.current;
     const textStyle = style || {};
+
     const textObj = new fabric.IText(text, {
       left: position?.x || 100,
       top: position?.y || 100,
-      fontSize: textStyle.fontSize || activeStyle.fontSize || 14,
-      fontFamily: textStyle.fontFamily || activeStyle.fontFamily || 'Arial',
-      fontWeight: textStyle.fontWeight || 'normal',
-      fill: textStyle.color || activeStyle.strokeColor,
+      fontSize: (textStyle.fontSize as number) || s.fontSize || 14,
+      fontFamily: (textStyle.fontFamily as string) || s.fontFamily || 'Arial',
+      fontWeight: (textStyle.fontWeight as string) || 'normal',
+      fill: (textStyle.color as string) || s.strokeColor,
       id: uuidv4(),
-      // Add background if requested
-      backgroundColor: textStyle.hasBackground ? textStyle.backgroundColor : undefined,
-      // Add stroke for outline effect
-      stroke: textStyle.hasOutline ? textStyle.outlineColor : undefined,
+      backgroundColor: textStyle.hasBackground ? (textStyle.backgroundColor as string) : undefined,
+      stroke: textStyle.hasOutline ? (textStyle.outlineColor as string) : undefined,
       strokeWidth: textStyle.hasOutline ? 0.5 : 0,
-    });
+    } as any);
 
     fabricRef.current.add(textObj);
     fabricRef.current.setActiveObject(textObj);
     fabricRef.current.renderAll();
     saveObjectToState(textObj);
-  }, [activeStyle, fabric]);
+  }, [saveObjectToState]);
 
-  const addLabel = useCallback((text: string, position: DrawingPoint, style: {
-    fontSize: number;
-    fontFamily: string;
-    fontWeight: string;
-    color: string;
-    backgroundColor: string;
-    hasBackground: boolean;
-    hasOutline: boolean;
-    outlineColor: string;
-  }) => {
+  const addLabel = useCallback((text: string, position: DrawingPoint, style: Record<string, unknown>) => {
+    const fabric = fabricModuleRef.current;
     if (!fabricRef.current || !fabric) return;
 
-    // Create text with optional background box
     if (style.hasBackground) {
-      // Create a group with background rectangle and text
       const textForMeasure = new fabric.Text(text, {
-        fontSize: style.fontSize,
-        fontFamily: style.fontFamily,
-        fontWeight: style.fontWeight,
+        fontSize: style.fontSize as number,
+        fontFamily: style.fontFamily as string,
+        fontWeight: style.fontWeight as string,
       });
 
       const padding = 4;
       const bgRect = new fabric.Rect({
-        width: textForMeasure.width! + padding * 2,
-        height: textForMeasure.height! + padding * 2,
-        fill: style.backgroundColor,
-        stroke: style.hasOutline ? style.outlineColor : undefined,
+        width: (textForMeasure.width || 0) + padding * 2,
+        height: (textForMeasure.height || 0) + padding * 2,
+        fill: style.backgroundColor as string,
+        stroke: style.hasOutline ? (style.outlineColor as string) : undefined,
         strokeWidth: style.hasOutline ? 1 : 0,
         rx: 2,
         ry: 2,
@@ -513,10 +592,10 @@ export default function DrawingCanvas({
       });
 
       const labelText = new fabric.Text(text, {
-        fontSize: style.fontSize,
-        fontFamily: style.fontFamily,
-        fontWeight: style.fontWeight,
-        fill: style.color,
+        fontSize: style.fontSize as number,
+        fontFamily: style.fontFamily as string,
+        fontWeight: style.fontWeight as string,
+        fill: style.color as string,
         originX: 'center',
         originY: 'center',
       });
@@ -527,87 +606,77 @@ export default function DrawingCanvas({
         id: uuidv4(),
         originX: 'center',
         originY: 'center',
-      });
+      } as any);
 
       fabricRef.current.add(group);
       fabricRef.current.setActiveObject(group);
       fabricRef.current.renderAll();
       saveObjectToState(group);
     } else {
-      // Simple text without background
       addText(text, position, style);
     }
-  }, [fabric, addText]);
+  }, [addText, saveObjectToState]);
 
   const addDimension = useCallback((start: DrawingPoint, end: DrawingPoint, customLabel?: string) => {
+    const fabric = fabricModuleRef.current;
     if (!fabricRef.current || !fabric) return;
-
-    const canvas = fabricRef.current;
+    const style = activeStyleRef.current;
     const label = customLabel || calculateDistance(start, end, currentDrawing?.scale?.pixelsPerFoot || 10);
-
-    // Create dimension line with arrows
-    const group = createDimensionLine(start, end, label, fabric, activeStyle);
-    group.set({ id: uuidv4() });
-    canvas.add(group);
-    canvas.renderAll();
+    const group = createDimensionLine(start, end, label, fabric, style);
+    (group as any).set({ id: uuidv4() });
+    fabricRef.current.add(group);
+    fabricRef.current.renderAll();
     saveObjectToState(group);
-  }, [currentDrawing?.scale, activeStyle, fabric]);
+  }, [currentDrawing?.scale, saveObjectToState]);
 
-  const addMeasurement = useCallback((start: DrawingPoint, end: DrawingPoint, measurement: {
-    value: number;
-    unit: string;
-    displayText: string;
-  }) => {
+  const addMeasurement = useCallback((start: DrawingPoint, end: DrawingPoint, measurement: { value: number; unit: string; displayText: string }) => {
+    const fabric = fabricModuleRef.current;
     if (!fabricRef.current || !fabric) return;
-
-    const canvas = fabricRef.current;
-    const group = createDimensionLine(start, end, measurement.displayText, fabric, activeStyle);
-    group.set({ id: uuidv4() });
-    canvas.add(group);
-    canvas.renderAll();
+    const style = activeStyleRef.current;
+    const group = createDimensionLine(start, end, measurement.displayText, fabric, style);
+    (group as any).set({ id: uuidv4() });
+    fabricRef.current.add(group);
+    fabricRef.current.renderAll();
     saveObjectToState(group);
-  }, [activeStyle, fabric]);
+  }, [saveObjectToState]);
 
   const addImage = useCallback(async (imageData: string) => {
+    const fabric = fabricModuleRef.current;
     if (!fabricRef.current || !fabric) return;
 
-    fabric.Image.fromURL(imageData, (img: FabricObject) => {
-      img.set({
-        left: 0,
-        top: 0,
-        id: uuidv4(),
-        selectable: true,
-      });
-      // Scale to fit canvas
-      const maxWidth = width * 0.8;
-      const maxHeight = height * 0.8;
-      if (img.width > maxWidth || img.height > maxHeight) {
-        const scale = Math.min(maxWidth / img.width, maxHeight / img.height);
-        img.scale(scale);
-      }
-      fabricRef.current.add(img);
-      fabricRef.current.sendToBack(img);
-      fabricRef.current.renderAll();
-    });
-  }, [width, height, fabric]);
+    const img = await fabric.Image.fromURL(imageData);
+    img.set({
+      left: 0,
+      top: 0,
+      id: uuidv4(),
+      selectable: true,
+    } as any);
+    const maxWidth = width * 0.8;
+    const maxHeight = height * 0.8;
+    if ((img.width || 0) > maxWidth || (img.height || 0) > maxHeight) {
+      const scale = Math.min(maxWidth / (img.width || 1), maxHeight / (img.height || 1));
+      img.scale(scale);
+    }
+    fabricRef.current.add(img);
+    fabricRef.current.sendObjectToBack(img);
+    fabricRef.current.renderAll();
+    pushSnapshot();
+  }, [width, height, pushSnapshot]);
 
   const deleteSelected = useCallback(() => {
     if (!fabricRef.current) return;
     const activeObjects = fabricRef.current.getActiveObjects();
     activeObjects.forEach((obj: FabricObject) => {
-      fabricRef.current.remove(obj);
+      fabricRef.current!.remove(obj);
     });
     fabricRef.current.discardActiveObject();
     fabricRef.current.renderAll();
-  }, []);
+    pushSnapshot();
+  }, [pushSnapshot]);
 
   const exportToImage = useCallback((): string | null => {
     if (!fabricRef.current) return null;
-    return fabricRef.current.toDataURL({
-      format: 'png',
-      quality: 1,
-      multiplier: 2,
-    });
+    return fabricRef.current.toDataURL({ format: 'png', quality: 1, multiplier: 2 });
   }, []);
 
   const exportToJSON = useCallback((): string | null => {
@@ -615,11 +684,12 @@ export default function DrawingCanvas({
     return JSON.stringify(fabricRef.current.toJSON(['id', 'isGrid']));
   }, []);
 
-  const loadFromJSON = useCallback((json: string) => {
+  const loadFromJSON = useCallback(async (json: string) => {
     if (!fabricRef.current) return;
-    fabricRef.current.loadFromJSON(json, () => {
-      fabricRef.current.renderAll();
-    });
+    isLoadingSnapshotRef.current = true;
+    await fabricRef.current.loadFromJSON(json);
+    fabricRef.current.renderAll();
+    isLoadingSnapshotRef.current = false;
   }, []);
 
   const clearCanvas = useCallback(() => {
@@ -627,99 +697,109 @@ export default function DrawingCanvas({
     fabricRef.current.clear();
     fabricRef.current.backgroundColor = '#ffffff';
     fabricRef.current.renderAll();
-  }, []);
+    pushSnapshot();
+  }, [pushSnapshot]);
 
-  const undo = useCallback(() => {
-    // Implement undo using history
-    const { history, historyIndex } = drawingState;
-    if (historyIndex > 0) {
-      // Apply previous state
-    }
-  }, [drawingState]);
+  const undo = useCallback(async () => {
+    const stack = historyStackRef.current;
+    const idx = historyIndexRef.current;
+    if (idx <= 0 || !fabricRef.current) return;
+    const newIdx = idx - 1;
+    historyIndexRef.current = newIdx;
+    isLoadingSnapshotRef.current = true;
+    await fabricRef.current.loadFromJSON(stack[newIdx]);
+    fabricRef.current.renderAll();
+    isLoadingSnapshotRef.current = false;
+    // Also update store
+    getSnapshotForUndo();
+  }, [getSnapshotForUndo]);
 
-  const redo = useCallback(() => {
-    // Implement redo using history
-  }, [drawingState]);
+  const redo = useCallback(async () => {
+    const stack = historyStackRef.current;
+    const idx = historyIndexRef.current;
+    if (idx >= stack.length - 1 || !fabricRef.current) return;
+    const newIdx = idx + 1;
+    historyIndexRef.current = newIdx;
+    isLoadingSnapshotRef.current = true;
+    await fabricRef.current.loadFromJSON(stack[newIdx]);
+    fabricRef.current.renderAll();
+    isLoadingSnapshotRef.current = false;
+    // Also update store
+    getSnapshotForRedo();
+  }, [getSnapshotForRedo]);
 
-  // Set tool programmatically
   const setTool = useCallback((tool: DrawingToolType) => {
     setActiveTool(tool);
     updateStatus(`Tool: ${tool.charAt(0).toUpperCase() + tool.slice(1)} selected`);
-  }, [setActiveTool]);
+  }, [setActiveTool, updateStatus]);
 
-  // Cancel current operation
   const cancelCurrentOperation = useCallback(() => {
     if (!fabricRef.current) return;
-
-    // Clear any in-progress polyline/polygon
     if (currentShapeRef.current) {
       fabricRef.current.remove(currentShapeRef.current);
       currentShapeRef.current = null;
     }
+    if (polylinePreviewRef.current) {
+      fabricRef.current.remove(polylinePreviewRef.current);
+      polylinePreviewRef.current = null;
+    }
     polylinePointsRef.current = [];
-
-    // Clear selection
     fabricRef.current.discardActiveObject();
     fabricRef.current.renderAll();
-
-    // Switch to select tool
     setActiveTool('select');
     updateStatus('Operation cancelled');
   }, [setActiveTool, updateStatus]);
 
-  // Add cursor tracking to mouse move
-  useEffect(() => {
-    if (!fabricRef.current || !fabric || !isReady) return;
+  const zoomIn = useCallback(() => {
+    if (!fabricRef.current) return;
+    let zoom = fabricRef.current.getZoom() * 1.2;
+    zoom = Math.min(zoom, 5.0);
+    const center = fabricRef.current.getCenterPoint();
+    fabricRef.current.zoomToPoint(center, zoom);
+    onZoomChange?.(zoom);
+  }, [onZoomChange]);
 
-    const canvas = fabricRef.current;
+  const zoomOut = useCallback(() => {
+    if (!fabricRef.current) return;
+    let zoom = fabricRef.current.getZoom() * 0.8;
+    zoom = Math.max(zoom, 0.25);
+    const center = fabricRef.current.getCenterPoint();
+    fabricRef.current.zoomToPoint(center, zoom);
+    onZoomChange?.(zoom);
+  }, [onZoomChange]);
 
-    const handleMouseMoveForCursor = (e: any) => {
-      // Fabric.js 7.x uses e.pointer
-      if (e.pointer) {
-        onCursorMove?.({ x: e.pointer.x, y: e.pointer.y });
-      } else if (e.absolutePointer) {
-        onCursorMove?.({ x: e.absolutePointer.x, y: e.absolutePointer.y });
-      }
-    };
+  const resetZoom = useCallback(() => {
+    if (!fabricRef.current) return;
+    fabricRef.current.setViewportTransform([1, 0, 0, 1, 0, 0]);
+    onZoomChange?.(1);
+  }, [onZoomChange]);
 
-    const handleMouseOut = () => {
-      onCursorMove?.(null);
-    };
-
-    canvas.on('mouse:move', handleMouseMoveForCursor);
-    canvas.on('mouse:out', handleMouseOut);
-
-    return () => {
-      canvas.off('mouse:move', handleMouseMoveForCursor);
-      canvas.off('mouse:out', handleMouseOut);
-    };
-  }, [fabric, isReady, onCursorMove]);
-
-  // Expose methods via ref
-  useEffect(() => {
-    (window as any).drawingCanvas = {
-      addText,
-      addLabel,
-      addDimension,
-      addMeasurement,
-      addImage,
-      deleteSelected,
-      exportToImage,
-      exportToJSON,
-      loadFromJSON,
-      clearCanvas,
-      undo,
-      redo,
-      setTool,
-      cancelCurrentOperation,
-      getCanvas: () => fabricRef.current,
-      getScale: () => currentDrawing?.scale?.pixelsPerFoot || 10,
-    };
-  }, [addText, addLabel, addDimension, addMeasurement, addImage, deleteSelected, exportToImage, exportToJSON, loadFromJSON, clearCanvas, undo, redo, setTool, cancelCurrentOperation, currentDrawing?.scale]);
+  // Expose handle via ref
+  useImperativeHandle(ref, () => ({
+    addText,
+    addLabel,
+    addDimension,
+    addMeasurement,
+    addImage,
+    deleteSelected,
+    exportToImage,
+    exportToJSON,
+    loadFromJSON,
+    clearCanvas,
+    undo,
+    redo,
+    setTool,
+    cancelCurrentOperation,
+    getCanvas: () => fabricRef.current,
+    getScale: () => currentDrawing?.scale?.pixelsPerFoot || 10,
+    zoomIn,
+    zoomOut,
+    resetZoom,
+  }), [addText, addLabel, addDimension, addMeasurement, addImage, deleteSelected, exportToImage, exportToJSON, loadFromJSON, clearCanvas, undo, redo, setTool, cancelCurrentOperation, currentDrawing?.scale, zoomIn, zoomOut, resetZoom]);
 
   return (
     <div className="drawing-canvas-container relative border border-slate-300 rounded-lg overflow-hidden bg-white">
-      <canvas ref={canvasRef} id="drawing-canvas" />
+      <canvas ref={canvasElRef} id="drawing-canvas" />
       {!isReady && (
         <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-75">
           <div className="text-slate-600">Loading canvas...</div>
@@ -727,19 +807,30 @@ export default function DrawingCanvas({
       )}
     </div>
   );
-}
+});
 
+export default DrawingCanvas;
+
+// ============================================================
 // Helper functions
+// ============================================================
+
+function getPointerFromEvent(e: any): DrawingPoint {
+  if (e.scenePoint) return { x: e.scenePoint.x, y: e.scenePoint.y };
+  if (e.pointer) return { x: e.pointer.x, y: e.pointer.y };
+  if (e.absolutePointer) return { x: e.absolutePointer.x, y: e.absolutePointer.y };
+  return { x: 0, y: 0 };
+}
 
 function createShape(
   tool: DrawingToolType,
   start: DrawingPoint,
-  current: DrawingPoint,
-  style: any,
-  fabric: any
-): FabricObject | null {
+  _current: DrawingPoint,
+  style: DrawingStyle,
+  fabric: FabricModule,
+): any | null {
   const id = uuidv4();
-  const baseProps = {
+  const baseProps: Record<string, unknown> = {
     id,
     stroke: style.strokeColor,
     strokeWidth: style.strokeWidth,
@@ -749,62 +840,20 @@ function createShape(
 
   switch (tool) {
     case 'rectangle':
-      return new fabric.Rect({
-        ...baseProps,
-        left: start.x,
-        top: start.y,
-        width: 0,
-        height: 0,
-      });
-
+      return new fabric.Rect({ ...baseProps, left: start.x, top: start.y, width: 0, height: 0 });
     case 'circle':
-      return new fabric.Circle({
-        ...baseProps,
-        left: start.x,
-        top: start.y,
-        radius: 0,
-      });
-
+      return new fabric.Circle({ ...baseProps, left: start.x, top: start.y, radius: 0 });
     case 'ellipse':
-      return new fabric.Ellipse({
-        ...baseProps,
-        left: start.x,
-        top: start.y,
-        rx: 0,
-        ry: 0,
-      });
-
+      return new fabric.Ellipse({ ...baseProps, left: start.x, top: start.y, rx: 0, ry: 0 });
     case 'line':
-      return new fabric.Line([start.x, start.y, start.x, start.y], {
-        ...baseProps,
-        fill: undefined,
-      });
-
+      return new fabric.Line([start.x, start.y, start.x, start.y], { ...baseProps, fill: undefined });
     case 'triangle':
-      return new fabric.Triangle({
-        ...baseProps,
-        left: start.x,
-        top: start.y,
-        width: 0,
-        height: 0,
-      });
-
+      return new fabric.Triangle({ ...baseProps, left: start.x, top: start.y, width: 0, height: 0 });
+    // arc, curve, spline are removed — return null (no-op)
     case 'arc':
-      // Use a circle initially, we'll convert the visual to an arc during update
-      // Store the arc as a circle with metadata about the arc
-      const arcCircle = new fabric.Circle({
-        ...baseProps,
-        fill: 'transparent',
-        left: start.x,
-        top: start.y,
-        radius: 1,
-        startAngle: 0,
-        endAngle: Math.PI, // semicircle
-      });
-      (arcCircle as any).isArc = true;
-      (arcCircle as any).arcStart = start;
-      return arcCircle;
-
+    case 'curve':
+    case 'spline':
+      return null;
     default:
       return null;
   }
@@ -812,70 +861,69 @@ function createShape(
 
 function updateShape(
   tool: DrawingToolType,
-  shape: FabricObject,
+  shape: any,
   start: DrawingPoint,
   current: DrawingPoint,
-  fabric: any
+  shiftHeld: boolean,
 ): void {
   const width = current.x - start.x;
   const height = current.y - start.y;
 
   switch (tool) {
-    case 'rectangle':
+    case 'rectangle': {
+      const w = Math.abs(width);
+      const h = shiftHeld ? w : Math.abs(height);
       shape.set({
-        width: Math.abs(width),
-        height: Math.abs(height),
-        left: width > 0 ? start.x : current.x,
-        top: height > 0 ? start.y : current.y,
+        width: w,
+        height: h,
+        left: width > 0 ? start.x : start.x - w,
+        top: height > 0 ? start.y : start.y - h,
       });
       break;
-
-    case 'circle':
+    }
+    case 'circle': {
       const radius = Math.sqrt(width * width + height * height) / 2;
-      shape.set({
-        radius,
-        left: start.x - radius,
-        top: start.y - radius,
-      });
+      shape.set({ radius, left: start.x - radius, top: start.y - radius });
       break;
-
-    case 'ellipse':
+    }
+    case 'ellipse': {
+      const rx = Math.abs(width) / 2;
+      const ry = shiftHeld ? rx : Math.abs(height) / 2;
       shape.set({
-        rx: Math.abs(width) / 2,
-        ry: Math.abs(height) / 2,
+        rx,
+        ry,
         left: width > 0 ? start.x : current.x,
         top: height > 0 ? start.y : current.y,
       });
       break;
-
-    case 'line':
+    }
+    case 'line': {
+      let x2 = current.x;
+      let y2 = current.y;
+      if (shiftHeld) {
+        // Snap to nearest 45-degree increment
+        const dx = current.x - start.x;
+        const dy = current.y - start.y;
+        const angle = Math.atan2(dy, dx);
+        const snappedAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        x2 = start.x + dist * Math.cos(snappedAngle);
+        y2 = start.y + dist * Math.sin(snappedAngle);
+      }
+      shape.set({ x2, y2 });
+      break;
+    }
+    case 'triangle': {
+      const tw = Math.abs(width);
+      const th = shiftHeld ? tw : Math.abs(height);
       shape.set({
-        x2: current.x,
-        y2: current.y,
+        width: tw,
+        height: th,
+        left: width > 0 ? start.x : start.x - tw,
+        top: height > 0 ? start.y : start.y - th,
       });
       break;
-
-    case 'triangle':
-      shape.set({
-        width: Math.abs(width),
-        height: Math.abs(height),
-        left: width > 0 ? start.x : current.x,
-        top: height > 0 ? start.y : current.y,
-      });
-      break;
-
-    case 'arc':
-      // Create a semicircle arc from start to current position
-      // We draw this as a circle positioned between start and end
-      const arcRadius = Math.sqrt(width * width + height * height) / 2;
-      const midX = (start.x + current.x) / 2;
-      const midY = (start.y + current.y) / 2;
-      shape.set({
-        radius: arcRadius,
-        left: midX - arcRadius,
-        top: midY - arcRadius,
-      });
-      break;
+    }
   }
 }
 
@@ -883,20 +931,16 @@ function createDimensionLine(
   start: DrawingPoint,
   end: DrawingPoint,
   label: string,
-  fabric: any,
-  style: any
-): FabricObject {
+  fabric: FabricModule,
+  style: DrawingStyle,
+): any {
   const midX = (start.x + end.x) / 2;
   const midY = (start.y + end.y) / 2;
   const angle = Math.atan2(end.y - start.y, end.x - start.x) * (180 / Math.PI);
+  const color = style.strokeColor || '#000000';
 
-  // Main line
-  const line = new fabric.Line([start.x, start.y, end.x, end.y], {
-    stroke: style.strokeColor || '#000000',
-    strokeWidth: 1,
-  });
+  const line = new fabric.Line([start.x, start.y, end.x, end.y], { stroke: color, strokeWidth: 1 });
 
-  // End ticks
   const tickLength = 10;
   const perpAngle = (angle + 90) * (Math.PI / 180);
 
@@ -905,78 +949,68 @@ function createDimensionLine(
     start.y - Math.sin(perpAngle) * tickLength,
     start.x + Math.cos(perpAngle) * tickLength,
     start.y + Math.sin(perpAngle) * tickLength,
-  ], {
-    stroke: style.strokeColor || '#000000',
-    strokeWidth: 1,
-  });
+  ], { stroke: color, strokeWidth: 1 });
 
   const tick2 = new fabric.Line([
     end.x - Math.cos(perpAngle) * tickLength,
     end.y - Math.sin(perpAngle) * tickLength,
     end.x + Math.cos(perpAngle) * tickLength,
     end.y + Math.sin(perpAngle) * tickLength,
-  ], {
-    stroke: style.strokeColor || '#000000',
-    strokeWidth: 1,
-  });
+  ], { stroke: color, strokeWidth: 1 });
 
-  // Label
   const text = new fabric.Text(label, {
     left: midX,
     top: midY - 15,
     fontSize: 12,
     fontFamily: 'Arial',
-    fill: style.strokeColor || '#000000',
+    fill: color,
     textAlign: 'center',
     originX: 'center',
   });
 
-  return new fabric.Group([line, tick1, tick2, text], {
-    selectable: true,
-  });
+  return new fabric.Group([line, tick1, tick2, text], { selectable: true });
 }
 
-function drawGrid(canvas: FabricCanvas, size: number, color: string): void {
-  const width = canvas.getWidth();
-  const height = canvas.getHeight();
+function drawGrid(canvas: any, size: number, color: string, fabric: FabricModule): void {
+  const w = canvas.getWidth();
+  const h = canvas.getHeight();
 
-  for (let i = 0; i < width / size; i++) {
-    const line = new (window as any).fabric.Line([i * size, 0, i * size, height], {
+  for (let i = 0; i <= w / size; i++) {
+    const line = new fabric.Line([i * size, 0, i * size, h], {
       stroke: color,
       strokeWidth: 0.5,
       selectable: false,
       evented: false,
       isGrid: true,
-    });
+    } as any);
     canvas.add(line);
-    canvas.sendToBack(line);
+    canvas.sendObjectToBack(line);
   }
 
-  for (let i = 0; i < height / size; i++) {
-    const line = new (window as any).fabric.Line([0, i * size, width, i * size], {
+  for (let i = 0; i <= h / size; i++) {
+    const line = new fabric.Line([0, i * size, w, i * size], {
       stroke: color,
       strokeWidth: 0.5,
       selectable: false,
       evented: false,
       isGrid: true,
-    });
+    } as any);
     canvas.add(line);
-    canvas.sendToBack(line);
+    canvas.sendObjectToBack(line);
   }
 }
 
 function calculateDistance(start: DrawingPoint, end: DrawingPoint, pixelsPerFoot: number): string {
-  const distance = Math.sqrt(Math.pow(end.x - start.x, 2) + Math.pow(end.y - start.y, 2));
+  const distance = Math.sqrt((end.x - start.x) ** 2 + (end.y - start.y) ** 2);
   const feet = distance / pixelsPerFoot;
   if (feet >= 1) {
     return `${feet.toFixed(1)}'`;
-  } else {
-    const inches = feet * 12;
-    return `${inches.toFixed(1)}"`;
   }
+  const inches = feet * 12;
+  return `${inches.toFixed(1)}"`;
 }
 
-function fabricObjectToDrawingObject(obj: FabricObject, layer: DrawingLayerType): DrawingObject {
+function fabricObjectToDrawingObject(obj: any, layer: DrawingLayerType): DrawingObject {
   return {
     id: obj.id || uuidv4(),
     type: obj.type as DrawingToolType,
