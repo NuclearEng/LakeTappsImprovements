@@ -34,8 +34,12 @@ export default function DrawingCanvas({
   const [fabric, setFabric] = useState<FabricCanvas>(null);
   const polylinePointsRef = useRef<DrawingPoint[]>([]);
   const currentShapeRef = useRef<FabricObject | null>(null);
+  const polylinePreviewRef = useRef<FabricObject | null>(null);
   const dimensionStartRef = useRef<DrawingPoint | null>(null);
   const dimensionPreviewRef = useRef<FabricObject | null>(null);
+  const isDrawingRef = useRef<boolean>(false);
+  const startPointRef = useRef<DrawingPoint | null>(null);
+  const activeToolRef = useRef<DrawingToolType>('select');
 
   const {
     drawingState,
@@ -46,6 +50,27 @@ export default function DrawingCanvas({
   } = useStore();
 
   const { activeTool, activeStyle, activeLayer, currentDrawing } = drawingState;
+
+  // Keep activeToolRef in sync with activeTool
+  useEffect(() => {
+    activeToolRef.current = activeTool;
+  }, [activeTool]);
+
+  // Define callbacks early so they can be used in effects
+  const updateStatus = useCallback((status: string) => {
+    onStatusChange?.(status);
+  }, [onStatusChange]);
+
+  const saveObjectToState = useCallback((obj: FabricObject) => {
+    const drawingObject = fabricObjectToDrawingObject(obj, activeLayer);
+    updateDrawingObjects([drawingObject]);
+    addToDrawingHistory({
+      timestamp: new Date().toISOString(),
+      action: 'add',
+      objectIds: [drawingObject.id],
+      newState: JSON.stringify(drawingObject),
+    });
+  }, [activeLayer, updateDrawingObjects, addToDrawingHistory]);
 
   // Load Fabric.js dynamically (client-side only)
   useEffect(() => {
@@ -103,6 +128,25 @@ export default function DrawingCanvas({
 
     const canvas = fabricRef.current;
 
+    // Clean up any in-progress drawing when tool changes
+    if (currentShapeRef.current && !currentShapeRef.current.selectable) {
+      canvas.remove(currentShapeRef.current);
+      currentShapeRef.current = null;
+    }
+    if (polylinePreviewRef.current) {
+      canvas.remove(polylinePreviewRef.current);
+      polylinePreviewRef.current = null;
+    }
+    if (dimensionPreviewRef.current) {
+      canvas.remove(dimensionPreviewRef.current);
+      dimensionPreviewRef.current = null;
+    }
+    isDrawingRef.current = false;
+    startPointRef.current = null;
+    dimensionStartRef.current = null;
+    polylinePointsRef.current = [];
+    canvas.renderAll();
+
     // Reset drawing mode
     canvas.isDrawingMode = false;
     canvas.selection = true;
@@ -126,19 +170,34 @@ export default function DrawingCanvas({
     if (!fabricRef.current || !fabric || !isReady) return;
 
     const canvas = fabricRef.current;
-    let isDrawing = false;
-    let startPoint: DrawingPoint | null = null;
-    let currentShape: FabricObject | null = null;
-    let polylinePoints: DrawingPoint[] = [];
+
+    // Helper to get pointer from event (Fabric.js 7.x uses e.pointer)
+    const getPointerFromEvent = (e: any): DrawingPoint => {
+      // Fabric.js 7.x provides pointer directly on the event
+      if (e.pointer) {
+        return { x: e.pointer.x, y: e.pointer.y };
+      }
+      // Alternative: use absolutePointer for canvas coordinates
+      if (e.absolutePointer) {
+        return { x: e.absolutePointer.x, y: e.absolutePointer.y };
+      }
+      // Fallback: try scenePoint
+      if (e.scenePoint) {
+        return { x: e.scenePoint.x, y: e.scenePoint.y };
+      }
+      return { x: 0, y: 0 };
+    };
 
     const handleMouseDown = (e: any) => {
-      if (activeTool === 'select' || activeTool === 'pan' || activeTool === 'freehand') return;
+      const tool = activeToolRef.current;
+      if (tool === 'select' || tool === 'pan' || tool === 'freehand') return;
 
-      const pointer = canvas.getPointer(e.e);
-      startPoint = { x: pointer.x, y: pointer.y };
+      const pointer = getPointerFromEvent(e);
+      const startPoint = { x: pointer.x, y: pointer.y };
+      startPointRef.current = startPoint;
 
       // Handle dimension tool - two-click mode
-      if (activeTool === 'dimension') {
+      if (tool === 'dimension') {
         if (!dimensionStartRef.current) {
           // First click - set start point
           dimensionStartRef.current = startPoint;
@@ -181,47 +240,62 @@ export default function DrawingCanvas({
       }
 
       // Handle text tool - single click to place
-      if (activeTool === 'text') {
+      if (tool === 'text') {
         onLabelRequest?.(startPoint);
         return;
       }
 
-      isDrawing = true;
+      isDrawingRef.current = true;
 
       // For polyline/polygon, accumulate points on click
-      if (activeTool === 'polyline' || activeTool === 'polygon') {
-        polylinePoints.push(startPoint);
-        if (polylinePoints.length === 1) {
-          // Start new polyline
-          currentShape = new fabric.Polyline(polylinePoints, {
-            stroke: activeStyle.strokeColor,
-            strokeWidth: activeStyle.strokeWidth,
-            fill: activeTool === 'polygon' ? activeStyle.fillColor : 'transparent',
-            opacity: activeStyle.fillOpacity,
-            selectable: false,
-          });
-          canvas.add(currentShape);
-        } else {
-          // Update polyline points
-          currentShape?.set({ points: [...polylinePoints] });
-          canvas.renderAll();
+      if (tool === 'polyline' || tool === 'polygon') {
+        polylinePointsRef.current.push(startPoint);
+
+        // Remove old shape and create new one with updated points
+        // (Fabric.js 7.x requires recreating polyline to update points properly)
+        if (currentShapeRef.current) {
+          canvas.remove(currentShapeRef.current);
         }
+
+        // Convert points to fabric.Point format for Fabric.js 7.x
+        const fabricPoints = polylinePointsRef.current.map(p => ({ x: p.x, y: p.y }));
+
+        // In Fabric.js 7.x, Polyline requires points as array of {x, y} objects
+        // and we need to set left/top based on the bounding box
+        const minX = Math.min(...fabricPoints.map(p => p.x));
+        const minY = Math.min(...fabricPoints.map(p => p.y));
+
+        currentShapeRef.current = new fabric.Polyline(fabricPoints, {
+          stroke: activeStyle.strokeColor,
+          strokeWidth: activeStyle.strokeWidth,
+          fill: tool === 'polygon' ? activeStyle.fillColor : 'transparent',
+          opacity: activeStyle.fillOpacity,
+          selectable: false,
+          objectCaching: false,
+          left: minX,
+          top: minY,
+        });
+        canvas.add(currentShapeRef.current);
+        canvas.renderAll();
+
+        updateStatus(`${tool === 'polygon' ? 'Polygon' : 'Polyline'}: ${polylinePointsRef.current.length} point(s) - Double-click to finish`);
         return;
       }
 
       // Create shape based on tool
-      currentShape = createShape(activeTool, startPoint, pointer, activeStyle, fabric);
-      if (currentShape) {
-        currentShape.set({ selectable: false });
-        canvas.add(currentShape);
+      currentShapeRef.current = createShape(tool, startPoint, pointer, activeStyle, fabric);
+      if (currentShapeRef.current) {
+        currentShapeRef.current.set({ selectable: false });
+        canvas.add(currentShapeRef.current);
       }
     };
 
     const handleMouseMove = (e: any) => {
-      const pointer = canvas.getPointer(e.e);
+      const tool = activeToolRef.current;
+      const pointer = getPointerFromEvent(e);
 
       // Update dimension preview line
-      if (activeTool === 'dimension' && dimensionStartRef.current && dimensionPreviewRef.current) {
+      if (tool === 'dimension' && dimensionStartRef.current && dimensionPreviewRef.current) {
         dimensionPreviewRef.current.set({
           x2: pointer.x,
           y2: pointer.y,
@@ -230,42 +304,102 @@ export default function DrawingCanvas({
         return;
       }
 
-      if (!isDrawing || !startPoint || !currentShape) return;
-      if (activeTool === 'polyline' || activeTool === 'polygon') return;
+      // Update polyline/polygon preview line
+      if ((tool === 'polyline' || tool === 'polygon') && polylinePointsRef.current.length > 0) {
+        const lastPoint = polylinePointsRef.current[polylinePointsRef.current.length - 1];
 
-      updateShape(activeTool, currentShape, startPoint, pointer, fabric);
+        // Remove old preview line
+        if (polylinePreviewRef.current) {
+          canvas.remove(polylinePreviewRef.current);
+        }
+
+        // Create new preview line from last point to current mouse position
+        polylinePreviewRef.current = new fabric.Line(
+          [lastPoint.x, lastPoint.y, pointer.x, pointer.y],
+          {
+            stroke: activeStyle.strokeColor,
+            strokeWidth: activeStyle.strokeWidth,
+            strokeDashArray: [5, 5],
+            selectable: false,
+            evented: false,
+          }
+        );
+        canvas.add(polylinePreviewRef.current);
+        canvas.renderAll();
+        return;
+      }
+
+      if (!isDrawingRef.current || !startPointRef.current || !currentShapeRef.current) return;
+
+      updateShape(tool, currentShapeRef.current, startPointRef.current, pointer, fabric);
       canvas.renderAll();
     };
 
     const handleMouseUp = () => {
-      if (activeTool === 'polyline' || activeTool === 'polygon') return;
+      const tool = activeToolRef.current;
+      if (tool === 'polyline' || tool === 'polygon') return;
 
-      if (currentShape) {
-        currentShape.set({ selectable: true });
-        currentShape.setCoords();
-        saveObjectToState(currentShape);
+      if (currentShapeRef.current) {
+        currentShapeRef.current.set({ selectable: true });
+        currentShapeRef.current.setCoords();
+        saveObjectToState(currentShapeRef.current);
       }
 
-      isDrawing = false;
-      startPoint = null;
-      currentShape = null;
+      isDrawingRef.current = false;
+      startPointRef.current = null;
+      currentShapeRef.current = null;
     };
 
     const handleDoubleClick = () => {
+      const tool = activeToolRef.current;
       // Finish polyline/polygon on double-click
-      if ((activeTool === 'polyline' || activeTool === 'polygon') && currentShape) {
-        if (activeTool === 'polygon' && polylinePoints.length >= 3) {
-          // Close the polygon
-          polylinePoints.push(polylinePoints[0]);
-          currentShape.set({ points: [...polylinePoints] });
+      if ((tool === 'polyline' || tool === 'polygon') && polylinePointsRef.current.length >= 2) {
+        // Remove the current preview shape and preview line
+        if (currentShapeRef.current) {
+          canvas.remove(currentShapeRef.current);
         }
-        currentShape.set({ selectable: true });
-        currentShape.setCoords();
-        saveObjectToState(currentShape);
+        if (polylinePreviewRef.current) {
+          canvas.remove(polylinePreviewRef.current);
+          polylinePreviewRef.current = null;
+        }
+
+        // Get final points
+        const finalPoints = [...polylinePointsRef.current];
+
+        // Close the polygon if needed
+        if (tool === 'polygon' && finalPoints.length >= 3) {
+          // Add closing point
+          finalPoints.push({ ...finalPoints[0] });
+        }
+
+        // Create the final shape
+        const fabricPoints = finalPoints.map(p => ({ x: p.x, y: p.y }));
+        const minX = Math.min(...fabricPoints.map(p => p.x));
+        const minY = Math.min(...fabricPoints.map(p => p.y));
+
+        const finalShape = new fabric.Polyline(fabricPoints, {
+          stroke: activeStyle.strokeColor,
+          strokeWidth: activeStyle.strokeWidth,
+          fill: tool === 'polygon' ? activeStyle.fillColor : 'transparent',
+          opacity: activeStyle.fillOpacity,
+          selectable: true,
+          objectCaching: false,
+          left: minX,
+          top: minY,
+          id: uuidv4(),
+        });
+
+        canvas.add(finalShape);
+        finalShape.setCoords();
+        saveObjectToState(finalShape);
         canvas.renderAll();
 
-        polylinePoints = [];
-        currentShape = null;
+        // Reset state
+        polylinePointsRef.current = [];
+        currentShapeRef.current = null;
+        isDrawingRef.current = false;
+
+        updateStatus(`${tool === 'polygon' ? 'Polygon' : 'Polyline'} completed`);
       }
     };
 
@@ -280,7 +414,7 @@ export default function DrawingCanvas({
       canvas.off('mouse:up', handleMouseUp);
       canvas.off('mouse:dblclick', handleDoubleClick);
     };
-  }, [activeTool, activeStyle, activeLayer, isReady, fabric]);
+  }, [activeStyle, activeLayer, isReady, fabric, onDimensionRequest, onLabelRequest, updateStatus, saveObjectToState]);
 
   const handleSelectionChange = useCallback((e: any) => {
     const selected = e.selected || [];
@@ -300,17 +434,6 @@ export default function DrawingCanvas({
       onObjectsChange(objects);
     }
   }, [onObjectsChange]);
-
-  const saveObjectToState = (obj: FabricObject) => {
-    const drawingObject = fabricObjectToDrawingObject(obj, activeLayer);
-    updateDrawingObjects([drawingObject]);
-    addToDrawingHistory({
-      timestamp: new Date().toISOString(),
-      action: 'add',
-      objectIds: [drawingObject.id],
-      newState: JSON.stringify(drawingObject),
-    });
-  };
 
   const getCanvasObjects = (): DrawingObject[] => {
     if (!fabricRef.current) return [];
@@ -542,12 +665,7 @@ export default function DrawingCanvas({
     // Switch to select tool
     setActiveTool('select');
     updateStatus('Operation cancelled');
-  }, [setActiveTool]);
-
-  // Update status with callback
-  const updateStatus = useCallback((status: string) => {
-    onStatusChange?.(status);
-  }, [onStatusChange]);
+  }, [setActiveTool, updateStatus]);
 
   // Add cursor tracking to mouse move
   useEffect(() => {
@@ -556,8 +674,12 @@ export default function DrawingCanvas({
     const canvas = fabricRef.current;
 
     const handleMouseMoveForCursor = (e: any) => {
-      const pointer = canvas.getPointer(e.e);
-      onCursorMove?.({ x: pointer.x, y: pointer.y });
+      // Fabric.js 7.x uses e.pointer
+      if (e.pointer) {
+        onCursorMove?.({ x: e.pointer.x, y: e.pointer.y });
+      } else if (e.absolutePointer) {
+        onCursorMove?.({ x: e.absolutePointer.x, y: e.absolutePointer.y });
+      }
     };
 
     const handleMouseOut = () => {
@@ -668,15 +790,20 @@ function createShape(
       });
 
     case 'arc':
-      return new fabric.Circle({
+      // Use a circle initially, we'll convert the visual to an arc during update
+      // Store the arc as a circle with metadata about the arc
+      const arcCircle = new fabric.Circle({
         ...baseProps,
+        fill: 'transparent',
         left: start.x,
         top: start.y,
-        radius: 0,
+        radius: 1,
         startAngle: 0,
-        endAngle: Math.PI,
-        fill: 'transparent',
+        endAngle: Math.PI, // semicircle
       });
+      (arcCircle as any).isArc = true;
+      (arcCircle as any).arcStart = start;
+      return arcCircle;
 
     default:
       return null;
@@ -738,11 +865,15 @@ function updateShape(
       break;
 
     case 'arc':
-      const arcRadius = Math.sqrt(width * width + height * height);
+      // Create a semicircle arc from start to current position
+      // We draw this as a circle positioned between start and end
+      const arcRadius = Math.sqrt(width * width + height * height) / 2;
+      const midX = (start.x + current.x) / 2;
+      const midY = (start.y + current.y) / 2;
       shape.set({
         radius: arcRadius,
-        left: start.x - arcRadius,
-        top: start.y - arcRadius,
+        left: midX - arcRadius,
+        top: midY - arcRadius,
       });
       break;
   }

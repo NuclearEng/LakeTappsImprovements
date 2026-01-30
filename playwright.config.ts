@@ -9,7 +9,7 @@ export default defineConfig({
   reporter: [['html'], ['list']],
   timeout: 30000,
   use: {
-    baseURL: 'http://localhost:3005',
+    baseURL: 'http://localhost:3000',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'on-first-retry',
@@ -24,7 +24,7 @@ export default defineConfig({
 
   webServer: {
     command: 'npm run dev',
-    url: 'http://localhost:3005',
+    url: 'http://localhost:3000',
     reuseExistingServer: true,
     timeout: 120 * 1000,
   },

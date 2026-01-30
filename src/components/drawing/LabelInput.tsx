@@ -83,6 +83,7 @@ export default function LabelInput({
   const [style, setStyle] = useState<LabelStyle>({ ...DEFAULT_STYLE, ...initialStyle });
   const [showPresets, setShowPresets] = useState(false);
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+  const prevIsOpenRef = useRef(false);
 
   useEffect(() => {
     if (isOpen && inputRef.current) {
@@ -91,9 +92,13 @@ export default function LabelInput({
   }, [isOpen]);
 
   useEffect(() => {
-    setText(initialText);
-    setStyle({ ...DEFAULT_STYLE, ...initialStyle });
-  }, [initialText, initialStyle, isOpen]);
+    // Only reset state when the modal opens (transition from closed to open)
+    if (isOpen && !prevIsOpenRef.current) {
+      setText(initialText);
+      setStyle({ ...DEFAULT_STYLE, ...initialStyle });
+    }
+    prevIsOpenRef.current = isOpen;
+  }, [isOpen, initialText, initialStyle]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

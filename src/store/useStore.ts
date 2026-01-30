@@ -12,6 +12,13 @@ import type {
   ConfirmationDialog,
   ActionPrompt,
   WorkflowStage,
+  WorkflowType,
+  SolarPermitType,
+  ADUPermitType,
+  AgentInfo,
+  ContractorInfo,
+  EnvironmentalScreening,
+  PreFlightChecklist,
   // Drawing types
   DrawingState,
   DrawingToolType,
@@ -53,6 +60,9 @@ interface AppState {
   saveProject: () => Promise<void>;
   clearProject: () => void;
 
+  // Actions - Workflow Type
+  setWorkflowType: (type: WorkflowType) => void;
+
   // Actions - Owner
   updateOwner: (owner: Partial<PropertyOwner>) => void;
 
@@ -65,9 +75,17 @@ interface AppState {
   // Actions - Insurance
   updateInsurance: (insurance: Partial<InsuranceInfo>) => void;
 
+  // Actions - Agent/Contractor/Environmental/PreFlight
+  updateAgent: (agent: Partial<AgentInfo>) => void;
+  updateContractor: (contractor: Partial<ContractorInfo>) => void;
+  updateEnvironmental: (environmental: Partial<EnvironmentalScreening>) => void;
+  updatePreFlightChecklist: (checklist: Partial<PreFlightChecklist>) => void;
+
   // Actions - Permits
   setRequiredPermits: (permits: PermitType[]) => void;
-  updatePermit: (type: PermitType, data: Partial<PermitApplication>) => void;
+  setSolarPermits: (permits: SolarPermitType[]) => void;
+  setADUPermits: (permits: ADUPermitType[]) => void;
+  updatePermit: (type: string, data: Partial<PermitApplication>) => void;
 
   // Actions - Navigation
   goToStage: (stage: number) => void;
@@ -115,24 +133,73 @@ interface AppState {
   pasteFromClipboard: () => DrawingObject[];
 }
 
+// Legacy stages (for backwards compatibility)
 const WORKFLOW_STAGES: WorkflowStage[] = [
   { id: 1, name: 'Welcome', description: 'Account setup and introduction', isComplete: false, isAccessible: true },
   { id: 2, name: 'Project Type', description: 'Select your project category', isComplete: false, isAccessible: false },
-  { id: 3, name: 'Property Owner', description: 'Enter owner information', isComplete: false, isAccessible: false },
-  { id: 4, name: 'Project Details', description: 'Describe your project', isComplete: false, isAccessible: false },
-  { id: 5, name: 'Site Information', description: 'Upload site plans and documents', isComplete: false, isAccessible: false },
-  { id: 6, name: 'Permit Applications', description: 'Complete required permits', isComplete: false, isAccessible: false },
-  { id: 7, name: 'Insurance', description: 'Insurance requirements', isComplete: false, isAccessible: false },
-  { id: 8, name: 'Review', description: 'Review all information', isComplete: false, isAccessible: false },
-  { id: 9, name: 'Generate Documents', description: 'Create submission documents', isComplete: false, isAccessible: false },
-  { id: 10, name: 'Submit & Track', description: 'Submit and track progress', isComplete: false, isAccessible: false },
+  { id: 3, name: 'Owner Info', description: 'Enter owner information', isComplete: false, isAccessible: false },
+  { id: 4, name: 'Details', description: 'Describe your project', isComplete: false, isAccessible: false },
+  { id: 5, name: 'Site Info', description: 'Property location and site plans', isComplete: false, isAccessible: false },
+  { id: 6, name: 'Agent/Contractor', description: 'Agent and contractor information', isComplete: false, isAccessible: false },
+  { id: 7, name: 'Permits', description: 'Review required permits', isComplete: false, isAccessible: false },
+  { id: 8, name: 'Insurance', description: 'Insurance requirements', isComplete: false, isAccessible: false },
+  { id: 9, name: 'Review', description: 'Review all information', isComplete: false, isAccessible: false },
+  { id: 10, name: 'Generate', description: 'Create submission documents', isComplete: false, isAccessible: false },
+  { id: 11, name: 'Complete', description: 'Submit and track progress', isComplete: false, isAccessible: false },
 ];
+
+// Workflow-specific stages
+export const getWorkflowStages = (workflowType: WorkflowType): WorkflowStage[] => {
+  const commonStages: WorkflowStage[] = [
+    { id: 1, name: 'Welcome', description: 'Select workflow type', isComplete: false, isAccessible: true },
+    { id: 2, name: 'Project Type', description: 'Select your project category', isComplete: false, isAccessible: false },
+  ];
+
+  const workflowSpecificStages: Record<WorkflowType, WorkflowStage[]> = {
+    waterfront: [
+      { id: 3, name: 'Owner Info', description: 'Enter owner information', isComplete: false, isAccessible: false },
+      { id: 4, name: 'Details', description: 'Project details', isComplete: false, isAccessible: false },
+      { id: 5, name: 'Site Info', description: 'Property location and site plans', isComplete: false, isAccessible: false },
+      { id: 6, name: 'Agent/Contractor', description: 'Agent and contractor information', isComplete: false, isAccessible: false },
+      { id: 7, name: 'Permits', description: 'Required permits', isComplete: false, isAccessible: false },
+      { id: 8, name: 'Insurance', description: 'Insurance requirements', isComplete: false, isAccessible: false },
+      { id: 9, name: 'Review', description: 'Review all information', isComplete: false, isAccessible: false },
+      { id: 10, name: 'Generate', description: 'Generate documents', isComplete: false, isAccessible: false },
+      { id: 11, name: 'Complete', description: 'Review and submit', isComplete: false, isAccessible: false },
+    ],
+    solar: [
+      { id: 3, name: 'Owner Info', description: 'Enter owner information', isComplete: false, isAccessible: false },
+      { id: 4, name: 'Details', description: 'System specifications', isComplete: false, isAccessible: false },
+      { id: 5, name: 'Site Info', description: 'Property location and site plans', isComplete: false, isAccessible: false },
+      { id: 6, name: 'Agent/Contractor', description: 'Agent and contractor information', isComplete: false, isAccessible: false },
+      { id: 7, name: 'Permits', description: 'Required permits', isComplete: false, isAccessible: false },
+      { id: 8, name: 'Insurance', description: 'Insurance requirements', isComplete: false, isAccessible: false },
+      { id: 9, name: 'Review', description: 'Review all information', isComplete: false, isAccessible: false },
+      { id: 10, name: 'Generate', description: 'Generate documents', isComplete: false, isAccessible: false },
+      { id: 11, name: 'Complete', description: 'Review and submit', isComplete: false, isAccessible: false },
+    ],
+    adu: [
+      { id: 3, name: 'Owner Info', description: 'Enter owner information', isComplete: false, isAccessible: false },
+      { id: 4, name: 'Details', description: 'ADU specifications', isComplete: false, isAccessible: false },
+      { id: 5, name: 'Site Info', description: 'Property location and site plans', isComplete: false, isAccessible: false },
+      { id: 6, name: 'Agent/Contractor', description: 'Agent and contractor information', isComplete: false, isAccessible: false },
+      { id: 7, name: 'Permits', description: 'Required permits', isComplete: false, isAccessible: false },
+      { id: 8, name: 'Insurance', description: 'Insurance requirements', isComplete: false, isAccessible: false },
+      { id: 9, name: 'Review', description: 'Review all information', isComplete: false, isAccessible: false },
+      { id: 10, name: 'Generate', description: 'Generate documents', isComplete: false, isAccessible: false },
+      { id: 11, name: 'Complete', description: 'Review and submit', isComplete: false, isAccessible: false },
+    ],
+  };
+
+  return [...commonStages, ...workflowSpecificStages[workflowType]];
+};
 
 const createEmptyProject = (): Project => ({
   id: uuidv4(),
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
   currentStage: 1,
+  workflowType: 'waterfront', // Default workflow type
   owner: {
     firstName: '',
     lastName: '',
@@ -144,6 +211,8 @@ const createEmptyProject = (): Project => ({
     zip: '',
     parcelNumber: '',
     isAgent: false,
+    ownershipType: 'individual',
+    coOwners: [],
   },
   details: {
     category: 'new_construction',
@@ -169,15 +238,10 @@ const createEmptyProject = (): Project => ({
   insurance: {
     hasInsurance: false,
   },
-  requiredPermits: ['cwa_license'], // CWA is always required
-  permits: {
-    cwa_license: {
-      type: 'cwa_license',
-      status: 'not_started',
-      requiredFields: {},
-      completedFields: {},
-    },
-  } as Record<PermitType, PermitApplication>,
+  requiredPermits: [], // Set based on workflow type
+  solarPermits: [],
+  aduPermits: [],
+  permits: {} as Record<string, PermitApplication>,
   isComplete: false,
 });
 
@@ -269,6 +333,36 @@ export const useStore = create<AppState>((set, get) => ({
     });
   },
 
+  // Workflow type actions
+  setWorkflowType: (type: WorkflowType) => {
+    const { project } = get();
+    if (!project) return;
+
+    // Set default permits based on workflow type
+    let requiredPermits: PermitType[] = [];
+    let solarPermits: SolarPermitType[] = [];
+    let aduPermits: ADUPermitType[] = [];
+
+    if (type === 'waterfront') {
+      requiredPermits = ['cwa_license'];
+    } else if (type === 'solar') {
+      solarPermits = ['solar_building_permit', 'lni_electrical_permit'];
+    } else if (type === 'adu') {
+      aduPermits = ['adu_building_permit', 'planning_approval'];
+    }
+
+    set({
+      project: {
+        ...project,
+        workflowType: type,
+        requiredPermits,
+        solarPermits,
+        aduPermits,
+        updatedAt: new Date().toISOString(),
+      },
+    });
+  },
+
   // Owner actions
   updateOwner: (ownerUpdate) => {
     const { project } = get();
@@ -325,6 +419,62 @@ export const useStore = create<AppState>((set, get) => ({
     });
   },
 
+  // Agent actions
+  updateAgent: (agentUpdate) => {
+    const { project } = get();
+    if (!project) return;
+
+    set({
+      project: {
+        ...project,
+        agent: { ...(project.agent || { name: '', company: '', address: '', phone: '', email: '', authorizationScope: [] }), ...agentUpdate },
+        updatedAt: new Date().toISOString(),
+      },
+    });
+  },
+
+  // Contractor actions
+  updateContractor: (contractorUpdate) => {
+    const { project } = get();
+    if (!project) return;
+
+    set({
+      project: {
+        ...project,
+        contractor: { ...(project.contractor || { name: '', waLicenseNumber: '', businessAddress: '', phone: '', email: '' }), ...contractorUpdate },
+        updatedAt: new Date().toISOString(),
+      },
+    });
+  },
+
+  // Environmental actions
+  updateEnvironmental: (envUpdate) => {
+    const { project } = get();
+    if (!project) return;
+
+    set({
+      project: {
+        ...project,
+        environmental: { ...(project.environmental || { nearWetlands: false, vegetationRemoval: false, groundDisturbance: false, nearFishSpawning: false, notes: '' }), ...envUpdate },
+        updatedAt: new Date().toISOString(),
+      },
+    });
+  },
+
+  // Pre-flight checklist actions
+  updatePreFlightChecklist: (checklistUpdate) => {
+    const { project } = get();
+    if (!project) return;
+
+    set({
+      project: {
+        ...project,
+        preFlightChecklist: { ...(project.preFlightChecklist || { infoAccurate: false, understandPreConstruction: false, annualInsurance: false, submitAsInstructed: false, processingTimesUnderstood: false }), ...checklistUpdate },
+        updatedAt: new Date().toISOString(),
+      },
+    });
+  },
+
   // Permit actions
   setRequiredPermits: (permits) => {
     const { project } = get();
@@ -352,7 +502,59 @@ export const useStore = create<AppState>((set, get) => ({
     });
   },
 
-  updatePermit: (type, data) => {
+  setSolarPermits: (permits: SolarPermitType[]) => {
+    const { project } = get();
+    if (!project) return;
+
+    const newPermits = { ...project.permits };
+    permits.forEach((type) => {
+      if (!newPermits[type]) {
+        newPermits[type] = {
+          type,
+          status: 'not_started',
+          requiredFields: {},
+          completedFields: {},
+        };
+      }
+    });
+
+    set({
+      project: {
+        ...project,
+        solarPermits: permits,
+        permits: newPermits,
+        updatedAt: new Date().toISOString(),
+      },
+    });
+  },
+
+  setADUPermits: (permits: ADUPermitType[]) => {
+    const { project } = get();
+    if (!project) return;
+
+    const newPermits = { ...project.permits };
+    permits.forEach((type) => {
+      if (!newPermits[type]) {
+        newPermits[type] = {
+          type,
+          status: 'not_started',
+          requiredFields: {},
+          completedFields: {},
+        };
+      }
+    });
+
+    set({
+      project: {
+        ...project,
+        aduPermits: permits,
+        permits: newPermits,
+        updatedAt: new Date().toISOString(),
+      },
+    });
+  },
+
+  updatePermit: (type: string, data) => {
     const { project } = get();
     if (!project || !project.permits[type]) return;
 

@@ -6,6 +6,7 @@ import ProjectTypeStage from './stages/ProjectTypeStage';
 import PropertyOwnerStage from './stages/PropertyOwnerStage';
 import ProjectDetailsStage from './stages/ProjectDetailsStage';
 import SiteInfoStage from './stages/SiteInfoStage';
+import AgentContractorStage from './stages/AgentContractorStage';
 import PermitApplicationsStage from './stages/PermitApplicationsStage';
 import InsuranceStage from './stages/InsuranceStage';
 import ReviewStage from './stages/ReviewStage';
@@ -28,14 +29,16 @@ export default function WorkflowContainer() {
       case 5:
         return <SiteInfoStage />;
       case 6:
-        return <PermitApplicationsStage />;
+        return <AgentContractorStage />;
       case 7:
-        return <InsuranceStage />;
+        return <PermitApplicationsStage />;
       case 8:
-        return <ReviewStage />;
+        return <InsuranceStage />;
       case 9:
-        return <GenerateDocsStage />;
+        return <ReviewStage />;
       case 10:
+        return <GenerateDocsStage />;
+      case 11:
         return <SubmitTrackStage />;
       default:
         return <WelcomeStage />;

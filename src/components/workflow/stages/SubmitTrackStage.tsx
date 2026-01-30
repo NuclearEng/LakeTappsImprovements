@@ -2,33 +2,191 @@
 
 import { useStore } from '@/store/useStore';
 
+interface SubmissionInfo {
+  id: string;
+  name: string;
+  agency: string;
+  method: 'Email' | 'Online Portal' | 'Mail' | 'In Person';
+  to: string;
+  contact?: string;
+  phone: string;
+  website?: string;
+}
+
+const SUBMISSION_DATA: Record<string, SubmissionInfo> = {
+  cwa_license: {
+    id: 'cwa_license',
+    name: 'CWA License Application',
+    agency: 'Cascade Water Alliance',
+    method: 'Email',
+    to: 'panderson@cascadewater.org',
+    contact: 'Paula Anderson',
+    phone: '(425) 453-0930',
+  },
+  shoreline_exemption: {
+    id: 'shoreline_exemption',
+    name: 'Shoreline Exemption',
+    agency: 'City of Bonney Lake',
+    method: 'Online Portal',
+    to: 'web.ci.bonney-lake.wa.us',
+    contact: 'Permit Center',
+    phone: '(253) 447-4356',
+  },
+  shoreline_substantial: {
+    id: 'shoreline_substantial',
+    name: 'Substantial Development Permit',
+    agency: 'City of Bonney Lake',
+    method: 'Online Portal',
+    to: 'web.ci.bonney-lake.wa.us',
+    contact: 'Permit Center',
+    phone: '(253) 447-4356',
+  },
+  shoreline_conditional: {
+    id: 'shoreline_conditional',
+    name: 'Conditional Use Permit',
+    agency: 'City of Bonney Lake',
+    method: 'Online Portal',
+    to: 'web.ci.bonney-lake.wa.us',
+    phone: '(253) 447-4356',
+  },
+  shoreline_variance: {
+    id: 'shoreline_variance',
+    name: 'Shoreline Variance',
+    agency: 'City of Bonney Lake',
+    method: 'Online Portal',
+    to: 'web.ci.bonney-lake.wa.us',
+    phone: '(253) 447-4356',
+  },
+  hpa: {
+    id: 'hpa',
+    name: 'Hydraulic Project Approval (HPA)',
+    agency: 'WA Dept. of Fish & Wildlife',
+    method: 'Email',
+    to: 'HPAapplications@dfw.wa.gov',
+    phone: '(360) 902-2534',
+  },
+  section_10: {
+    id: 'section_10',
+    name: 'Section 10 Permit',
+    agency: 'U.S. Army Corps of Engineers',
+    method: 'Email',
+    to: 'paoteam@nws02.usace.army.mil',
+    phone: '(206) 764-3495',
+  },
+  section_404: {
+    id: 'section_404',
+    name: 'Section 404 Permit',
+    agency: 'U.S. Army Corps of Engineers',
+    method: 'Email',
+    to: 'paoteam@nws02.usace.army.mil',
+    phone: '(206) 764-3495',
+  },
+  water_quality_401: {
+    id: 'water_quality_401',
+    name: '401 Water Quality Certification',
+    agency: 'WA Dept. of Ecology',
+    method: 'Online Portal',
+    to: 'ecology.wa.gov',
+    phone: '(360) 407-6000',
+  },
+  pierce_building_permit: {
+    id: 'pierce_building_permit',
+    name: 'Pierce County Building Permit',
+    agency: 'Pierce County Development Center',
+    method: 'Online Portal',
+    to: 'piercecountywa.gov/903',
+    phone: '(253) 798-3739',
+  },
+  building_permit: {
+    id: 'building_permit',
+    name: 'Building Permit',
+    agency: 'Pierce County Development Center',
+    method: 'Online Portal',
+    to: 'piercecountywa.gov/903',
+    phone: '(253) 798-3739',
+  },
+  lni_electrical_permit: {
+    id: 'lni_electrical_permit',
+    name: 'WA State Electrical Work Permit',
+    agency: 'WA Dept. of Labor & Industries',
+    method: 'Online Portal',
+    to: 'secure.lni.wa.gov/epispub',
+    phone: '(360) 902-5800',
+    website: 'lni.wa.gov',
+  },
+  solar_building_permit: {
+    id: 'solar_building_permit',
+    name: 'Solar Building Permit',
+    agency: 'Pierce County Planning & Public Works',
+    method: 'Online Portal',
+    to: 'piercecountywa.gov/PPW',
+    phone: '(253) 798-3739',
+  },
+  utility_interconnection: {
+    id: 'utility_interconnection',
+    name: 'Utility Interconnection Application',
+    agency: 'Utility Provider',
+    method: 'Online Portal',
+    to: 'pse.com/green-options',
+    phone: '1-800-562-1482',
+  },
+  adu_building_permit: {
+    id: 'adu_building_permit',
+    name: 'ADU Building Permit',
+    agency: 'Pierce County Planning & Public Works',
+    method: 'Online Portal',
+    to: 'piercecountywa.gov/PPW',
+    phone: '(253) 798-3739',
+  },
+  planning_approval: {
+    id: 'planning_approval',
+    name: 'Planning Department Approval',
+    agency: 'Pierce County Planning & Public Works',
+    method: 'Online Portal',
+    to: 'piercecountywa.gov/PPW',
+    phone: '(253) 798-3739',
+  },
+  septic_permit: {
+    id: 'septic_permit',
+    name: 'Septic System Permit',
+    agency: 'Pierce County Health Department',
+    method: 'In Person',
+    to: 'Pierce County Health Dept.',
+    phone: '(253) 798-6470',
+  },
+  adu_shoreline_permit: {
+    id: 'adu_shoreline_permit',
+    name: 'Shoreline Permit (ADU)',
+    agency: 'City of Bonney Lake',
+    method: 'Online Portal',
+    to: 'web.ci.bonney-lake.wa.us',
+    phone: '(253) 447-4356',
+  },
+};
+
 export default function SubmitTrackStage() {
   const { project, updatePermit, addNotification } = useStore();
 
   if (!project) return null;
 
-  const submissions = [
-    {
-      id: 'cwa_license',
-      name: 'CWA License Application',
-      agency: 'Cascade Water Alliance',
-      method: 'Email',
-      to: 'panderson@cascadewater.org',
-      contact: 'Paul Anderson',
-      phone: '(425) 453-0930',
-      status: project.permits.cwa_license?.status || 'not_started',
-    },
-    {
-      id: 'shoreline',
-      name: 'Shoreline Permit',
-      agency: 'City of Bonney Lake',
-      method: 'Online Portal',
-      to: 'web.ci.bonney-lake.wa.us',
-      contact: 'Permit Center',
-      phone: '(253) 447-4356',
-      status: 'not_started',
-    },
-  ];
+  const { requiredPermits, solarPermits, aduPermits, workflowType, permits } = project;
+
+  // Build dynamic submission list based on workflow type
+  const allPermitTypes: string[] = workflowType === 'solar'
+    ? [...(solarPermits || [])]
+    : workflowType === 'adu'
+    ? [...(aduPermits || [])]
+    : [...requiredPermits];
+
+  const submissions = allPermitTypes.map((permitType) => {
+    const info = SUBMISSION_DATA[permitType];
+    if (!info) return null;
+    return {
+      ...info,
+      status: permits[permitType]?.status || 'not_started',
+      confirmationNumber: permits[permitType]?.confirmationNumber || '',
+    };
+  }).filter(Boolean) as (SubmissionInfo & { status: string; confirmationNumber: string })[];
 
   const handleMarkSubmitted = (id: string) => {
     updatePermit(id as any, {
@@ -45,11 +203,17 @@ export default function SubmitTrackStage() {
     });
   };
 
+  const handleConfirmationNumber = (id: string, value: string) => {
+    updatePermit(id as any, { confirmationNumber: value });
+  };
+
   const statusConfig = {
     not_started: { label: 'Not Started', color: 'bg-slate-100 text-slate-600' },
+    in_progress: { label: 'In Progress', color: 'bg-amber-100 text-amber-700' },
     ready: { label: 'Ready to Submit', color: 'bg-amber-100 text-amber-700' },
     submitted: { label: 'Submitted', color: 'bg-blue-100 text-blue-700' },
     approved: { label: 'Approved', color: 'bg-emerald-100 text-emerald-700' },
+    denied: { label: 'Denied', color: 'bg-red-100 text-red-700' },
   };
 
   return (
@@ -90,16 +254,34 @@ export default function SubmitTrackStage() {
                     <p className="text-slate-500">Submit To</p>
                     <p className="font-medium text-slate-900">{submission.to}</p>
                   </div>
-                  <div>
-                    <p className="text-slate-500">Contact</p>
-                    <p className="font-medium text-slate-900">{submission.contact}</p>
-                  </div>
+                  {submission.contact && (
+                    <div>
+                      <p className="text-slate-500">Contact</p>
+                      <p className="font-medium text-slate-900">{submission.contact}</p>
+                    </div>
+                  )}
                   <div>
                     <p className="text-slate-500">Phone</p>
                     <p className="font-medium text-slate-900">{submission.phone}</p>
                   </div>
                 </div>
               </div>
+
+              {/* Confirmation number input for submitted permits */}
+              {submission.status === 'submitted' && (
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Confirmation Number
+                  </label>
+                  <input
+                    type="text"
+                    value={submission.confirmationNumber}
+                    onChange={(e) => handleConfirmationNumber(submission.id, e.target.value)}
+                    placeholder="Enter confirmation or tracking number"
+                    className="w-full max-w-md px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-500/10"
+                  />
+                </div>
+              )}
 
               <div className="flex gap-2">
                 {submission.method === 'Email' && (
@@ -113,7 +295,7 @@ export default function SubmitTrackStage() {
                     Open Email
                   </a>
                 )}
-                {submission.method === 'Online Portal' && (
+                {(submission.method === 'Online Portal') && (
                   <a
                     href={`https://${submission.to}`}
                     target="_blank"
@@ -139,6 +321,13 @@ export default function SubmitTrackStage() {
           );
         })}
       </div>
+
+      {submissions.length === 0 && (
+        <div className="card text-center py-12">
+          <p className="text-slate-600">No permits have been identified yet.</p>
+          <p className="text-sm text-slate-500 mt-1">Complete the previous steps to determine required permits.</p>
+        </div>
+      )}
 
       {/* Completion Message */}
       <div className="card bg-emerald-50 border-emerald-200">

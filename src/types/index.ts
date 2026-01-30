@@ -1,6 +1,10 @@
-// Project Types
-export type ProjectCategory = 'new_construction' | 'modification';
+// Workflow Types
+export type WorkflowType = 'waterfront' | 'solar' | 'adu';
 
+// Project Types
+export type ProjectCategory = 'new_construction' | 'modification' | 'repair_maintenance' | 'replace_structure';
+
+// Waterfront Improvement Types (existing)
 export type ImprovementType =
   | 'dock'
   | 'pier'
@@ -11,8 +15,27 @@ export type ImprovementType =
   | 'bulkhead'
   | 'mooring_pile'
   | 'swim_float'
+  | 'beach_area'
+  | 'lighting'
+  | 'fire_pit'
+  | 'stairs_path'
   | 'other';
 
+// Solar Improvement Types
+export type SolarImprovementType =
+  | 'rooftop_solar'
+  | 'ground_mount_solar'
+  | 'solar_carport'
+  | 'battery_storage';
+
+// ADU Improvement Types
+export type ADUImprovementType =
+  | 'detached_adu'
+  | 'attached_adu'
+  | 'garage_conversion'
+  | 'basement_conversion';
+
+// Waterfront Permit Types (existing)
 export type PermitType =
   | 'cwa_license'
   | 'shoreline_exemption'
@@ -20,10 +43,121 @@ export type PermitType =
   | 'shoreline_conditional'
   | 'shoreline_variance'
   | 'building_permit'
+  | 'pierce_building_permit'
+  | 'lni_electrical_permit'
   | 'hpa'
   | 'section_10'
   | 'section_404'
   | 'water_quality_401';
+
+// Solar Permit Types
+export type SolarPermitType =
+  | 'solar_building_permit'
+  | 'lni_electrical_permit'
+  | 'utility_interconnection';
+
+// ADU Permit Types
+export type ADUPermitType =
+  | 'adu_building_permit'
+  | 'planning_approval'
+  | 'septic_permit'
+  | 'adu_shoreline_permit'
+  | 'lni_electrical_permit';
+
+// Combined Permit Type for flexible storage
+export type AnyPermitType = PermitType | SolarPermitType | ADUPermitType;
+
+// Ownership Types
+export type OwnershipType = 'individual' | 'joint' | 'llc' | 'trust' | 'corporation';
+
+export interface CoOwner {
+  name: string;
+  phone: string;
+  email: string;
+  relationship: string;
+}
+
+export interface EntityInfo {
+  legalName: string;
+  entityType: string;
+  ubiEin: string;
+  registeredAgent: string;
+}
+
+export interface AgentInfo {
+  name: string;
+  company: string;
+  address: string;
+  phone: string;
+  email: string;
+  authorizationScope: string[];
+  authorizationLetter?: UploadedFile;
+}
+
+export interface ContractorInfo {
+  name: string;
+  waLicenseNumber: string;
+  businessAddress: string;
+  phone: string;
+  email: string;
+  insuranceCertificate?: UploadedFile;
+}
+
+// Improvement Specification Interfaces
+export interface DockSpecifications {
+  configuration: 'straight' | 'L' | 'T' | 'U' | '';
+  length: number;
+  width: number;
+  deckingMaterial: string;
+  pilingsCount: number;
+  pilingMaterial: string;
+  pilingDiameter: number;
+  waterDepth: number;
+}
+
+export interface BulkheadSpecifications {
+  length: number;
+  height: number;
+  topElevation: number;
+  material: string;
+  backfillRequired: boolean;
+  backfillVolume: number;
+}
+
+export interface BoatLiftSpecifications {
+  type: string;
+  powerSource: string;
+  hydraulicSystem: string;
+  capacity: number;
+}
+
+export interface BoathouseSpecifications {
+  length: number;
+  width: number;
+  height: number;
+  confirmedNoHabitableSpace: boolean;
+  confirmedNoPlumbing: boolean;
+}
+
+// Environmental Screening
+export interface EnvironmentalScreening {
+  nearWetlands: boolean;
+  vegetationRemoval: boolean;
+  vegetationDescription?: string;
+  groundDisturbance: boolean;
+  erosionControlPlan?: string;
+  nearFishSpawning: boolean;
+  notes: string;
+}
+
+// Pre-Flight Checklist
+export interface PreFlightChecklist {
+  infoAccurate: boolean;
+  understandPreConstruction: boolean;
+  annualInsurance: boolean;
+  submitAsInstructed: boolean;
+  processingTimesUnderstood: boolean;
+}
 
 export interface PropertyOwner {
   firstName: string;
@@ -37,6 +171,9 @@ export interface PropertyOwner {
   parcelNumber: string;
   isAgent: boolean;
   agentAuthorization?: string;
+  ownershipType: OwnershipType;
+  coOwners: CoOwner[];
+  entityInfo?: EntityInfo;
 }
 
 export interface ProjectDetails {
@@ -51,6 +188,37 @@ export interface ProjectDetails {
   withinShorelineJurisdiction: boolean;
   existingStructure: boolean;
   existingStructureDescription?: string;
+  // Solar-specific fields
+  solarImprovements?: SolarImprovementType[];
+  solarSystemSize?: number; // kW
+  panelCount?: number;
+  batteryCapacity?: number; // kWh
+  utilityProvider?: string;
+  inverterType?: 'string' | 'micro' | 'hybrid';
+  mountingType?: 'roof_flush' | 'roof_tilted' | 'ground' | 'carport';
+  estimatedAnnualProduction?: number; // kWh
+  // ADU-specific fields
+  aduImprovements?: ADUImprovementType[];
+  aduSquareFootage?: number;
+  aduBedrooms?: number;
+  aduBathrooms?: number;
+  hasExistingADU?: boolean;
+  hasSeparateEntrance?: boolean;
+  aduParkingSpaces?: number;
+  nearShoreline?: boolean; // Within 200ft of water
+  onSewer?: boolean;
+  // Building permit fields
+  constructionType?: string;
+  totalSquareFootage?: number;
+  contractorName?: string;
+  contractorLicense?: string;
+  // Electrical work fields
+  hasElectricalWork?: boolean;
+  // Improvement specifications (waterfront)
+  dockSpecs?: DockSpecifications;
+  bulkheadSpecs?: BulkheadSpecifications;
+  boatLiftSpecs?: BoatLiftSpecifications;
+  boathouseSpecs?: BoathouseSpecifications;
 }
 
 export interface SiteInformation {
@@ -83,10 +251,15 @@ export interface InsuranceInfo {
   coverageAmount?: number;
   additionalInsuredAdded?: boolean;
   certificateFile?: UploadedFile;
+  agentName?: string;
+  agentPhone?: string;
+  agentEmail?: string;
+  policyType?: string;
+  liabilityLimit?: number;
 }
 
 export interface PermitApplication {
-  type: PermitType;
+  type: AnyPermitType;
   status: 'not_started' | 'in_progress' | 'ready' | 'submitted' | 'approved' | 'denied';
   requiredFields: Record<string, unknown>;
   completedFields: Record<string, unknown>;
@@ -102,13 +275,21 @@ export interface Project {
   createdAt: string;
   updatedAt: string;
   currentStage: number;
+  workflowType: WorkflowType;
   owner: PropertyOwner;
   details: ProjectDetails;
   site: SiteInformation;
   insurance: InsuranceInfo;
   requiredPermits: PermitType[];
-  permits: Record<PermitType, PermitApplication>;
+  solarPermits?: SolarPermitType[];
+  aduPermits?: ADUPermitType[];
+  permits: Record<string, PermitApplication>; // Allow any permit type
   isComplete: boolean;
+  sitePlanDrawing?: SitePlanDrawing;
+  agent?: AgentInfo;
+  contractor?: ContractorInfo;
+  environmental?: EnvironmentalScreening;
+  preFlightChecklist?: PreFlightChecklist;
 }
 
 // Workflow Stage Types

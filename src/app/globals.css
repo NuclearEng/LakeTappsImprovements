@@ -2,10 +2,26 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================
+   CSS Custom Properties
+   ============================================ */
 :root {
   --foreground-rgb: 15, 23, 42;
   --background-start-rgb: 248, 250, 252;
   --background-end-rgb: 241, 245, 249;
+
+  /* Animation timing */
+  --duration-instant: 75ms;
+  --duration-fast: 150ms;
+  --duration-normal: 250ms;
+  --duration-slow: 350ms;
+  --duration-slower: 500ms;
+
+  /* Easing functions */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out-back: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-in-out-circ: cubic-bezier(0.85, 0, 0.15, 1);
+  --ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
 body {
@@ -17,199 +33,590 @@ body {
     )
     rgb(var(--background-start-rgb));
   min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Custom scrollbar */
+/* ============================================
+   Custom Scrollbar
+   ============================================ */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f5f9;
-  border-radius: 4px;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #94a3b8;
-  border-radius: 4px;
+  background: #cbd5e1;
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+  transition: background var(--duration-fast);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #64748b;
+  background: #94a3b8;
+  border: 2px solid transparent;
+  background-clip: content-box;
 }
 
-/* Focus states for accessibility */
+/* ============================================
+   Focus & Accessibility
+   ============================================ */
 *:focus-visible {
   outline: 2px solid #3b82f6;
   outline-offset: 2px;
+  border-radius: 4px;
 }
 
-/* Form elements */
+/* Reduce motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ============================================
+   Form Elements - Enhanced
+   ============================================ */
 input,
 textarea,
 select {
-  @apply rounded-lg border border-slate-300 px-4 py-2 text-slate-900
-         placeholder-slate-400 transition-colors duration-200
-         focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20;
+  @apply w-full rounded-lg border border-slate-300 px-4 py-3 text-slate-900
+         placeholder-slate-400 bg-white shadow-sm
+         transition-all duration-200 ease-out;
+}
+
+input:hover:not(:disabled):not(:focus),
+textarea:hover:not(:disabled):not(:focus),
+select:hover:not(:disabled):not(:focus) {
+  @apply border-slate-400;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  @apply border-primary-500 ring-4 ring-primary-500/10 shadow-md outline-none;
+  transform: translateY(-1px);
 }
 
 input:disabled,
 textarea:disabled,
 select:disabled {
-  @apply bg-slate-100 cursor-not-allowed opacity-60;
+  @apply bg-slate-50 cursor-not-allowed opacity-60 shadow-none;
 }
 
-/* Button styles */
+/* Error state for inputs */
+input.input-error,
+textarea.input-error,
+select.input-error {
+  @apply border-red-400 bg-red-50/50;
+}
+
+input.input-error:focus,
+textarea.input-error:focus,
+select.input-error:focus {
+  @apply border-red-500 ring-4 ring-red-500/10;
+}
+
+/* Success state for inputs */
+input.input-success,
+textarea.input-success,
+select.input-success {
+  @apply border-emerald-400;
+}
+
+input.input-success:focus,
+textarea.input-success:focus,
+select.input-success:focus {
+  @apply border-emerald-500 ring-4 ring-emerald-500/10;
+}
+
+/* Checkbox and Radio - Custom styling */
+input[type="checkbox"],
+input[type="radio"] {
+  @apply w-5 h-5 rounded border-2 border-slate-300 bg-white
+         text-primary-600 cursor-pointer shadow-none
+         transition-all duration-150 ease-out;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+input[type="radio"] {
+  @apply rounded-full;
+}
+
+input[type="checkbox"]:hover,
+input[type="radio"]:hover {
+  @apply border-primary-400 bg-primary-50;
+}
+
+input[type="checkbox"]:checked,
+input[type="radio"]:checked {
+  @apply bg-primary-600 border-primary-600;
+  animation: checkPop 0.2s var(--ease-out-back);
+}
+
+input[type="checkbox"]:checked::after {
+  content: '';
+  display: block;
+  width: 6px;
+  height: 10px;
+  border: solid white;
+  border-width: 0 2.5px 2.5px 0;
+  transform: rotate(45deg) translate(-1px, -1px);
+  margin: 2px auto;
+}
+
+input[type="radio"]:checked::after {
+  content: '';
+  display: block;
+  width: 10px;
+  height: 10px;
+  background: white;
+  border-radius: 50%;
+  margin: 3px;
+}
+
+/* ============================================
+   Button Styles - Premium Feel
+   ============================================ */
 .btn {
-  @apply inline-flex items-center justify-center rounded-lg px-4 py-2
-         font-medium transition-all duration-200 focus:outline-none
-         focus:ring-2 focus:ring-offset-2 disabled:opacity-50
-         disabled:cursor-not-allowed;
+  @apply inline-flex items-center justify-center gap-2 rounded-lg px-5 py-2.5
+         font-semibold text-sm tracking-wide
+         transition-all duration-200 ease-out
+         focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2
+         disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none
+         select-none;
+  transform: translateY(0);
+}
+
+.btn:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
+.btn:not(:disabled):active {
+  transform: translateY(0) scale(0.98);
+  transition-duration: 75ms;
 }
 
 .btn-primary {
-  @apply bg-primary-600 text-white hover:bg-primary-700
-         focus:ring-primary-500 active:bg-primary-800;
+  @apply bg-gradient-to-b from-primary-500 to-primary-600 text-white
+         shadow-md shadow-primary-500/25
+         hover:from-primary-600 hover:to-primary-700 hover:shadow-lg hover:shadow-primary-500/30
+         focus-visible:ring-primary-500
+         active:from-primary-700 active:to-primary-800;
 }
 
 .btn-secondary {
-  @apply bg-slate-100 text-slate-700 hover:bg-slate-200
-         focus:ring-slate-500 active:bg-slate-300;
+  @apply bg-white text-slate-700 border border-slate-200
+         shadow-sm
+         hover:bg-slate-50 hover:border-slate-300 hover:shadow
+         focus-visible:ring-slate-500
+         active:bg-slate-100;
 }
 
 .btn-success {
-  @apply bg-emerald-600 text-white hover:bg-emerald-700
-         focus:ring-emerald-500 active:bg-emerald-800;
+  @apply bg-gradient-to-b from-emerald-500 to-emerald-600 text-white
+         shadow-md shadow-emerald-500/25
+         hover:from-emerald-600 hover:to-emerald-700 hover:shadow-lg
+         focus-visible:ring-emerald-500
+         active:from-emerald-700 active:to-emerald-800;
 }
 
 .btn-danger {
-  @apply bg-red-600 text-white hover:bg-red-700
-         focus:ring-red-500 active:bg-red-800;
+  @apply bg-gradient-to-b from-red-500 to-red-600 text-white
+         shadow-md shadow-red-500/25
+         hover:from-red-600 hover:to-red-700 hover:shadow-lg
+         focus-visible:ring-red-500
+         active:from-red-700 active:to-red-800;
 }
 
 .btn-outline {
-  @apply border-2 border-primary-600 text-primary-600 bg-transparent
-         hover:bg-primary-50 focus:ring-primary-500;
+  @apply border-2 border-primary-500 text-primary-600 bg-transparent
+         hover:bg-primary-50 hover:border-primary-600
+         focus-visible:ring-primary-500
+         active:bg-primary-100;
+}
+
+.btn-ghost {
+  @apply text-slate-600 bg-transparent
+         hover:bg-slate-100 hover:text-slate-900
+         focus-visible:ring-slate-500
+         active:bg-slate-200;
 }
 
 .btn-lg {
-  @apply px-6 py-3 text-lg;
+  @apply px-8 py-3.5 text-base rounded-xl;
 }
 
 .btn-sm {
-  @apply px-3 py-1.5 text-sm;
+  @apply px-3.5 py-1.5 text-xs rounded-md gap-1.5;
 }
 
-/* Card styles */
+.btn-icon {
+  @apply p-2.5 rounded-lg;
+}
+
+/* ============================================
+   Card Styles - Depth & Polish
+   ============================================ */
 .card {
-  @apply bg-white rounded-xl shadow-sm border border-slate-200 p-6;
+  @apply bg-white rounded-2xl shadow-sm border border-slate-200/80 p-6
+         transition-all duration-200 ease-out;
 }
 
 .card-hover {
-  @apply hover:shadow-md hover:border-primary-200 transition-all duration-200 cursor-pointer;
+  @apply cursor-pointer;
 }
 
-/* Progress bar */
+.card-hover:hover {
+  @apply shadow-lg shadow-slate-200/50 border-slate-300 -translate-y-0.5;
+}
+
+.card-hover:active {
+  @apply shadow-md translate-y-0;
+  transition-duration: 75ms;
+}
+
+.card-selected {
+  @apply ring-2 ring-primary-500 border-primary-500 bg-primary-50/30 shadow-md shadow-primary-100;
+}
+
+/* Interactive cards with depth layers */
+.card-interactive {
+  @apply relative overflow-hidden;
+}
+
+.card-interactive::before {
+  content: '';
+  @apply absolute inset-0 bg-gradient-to-b from-white/50 to-transparent opacity-0
+         transition-opacity duration-200;
+  pointer-events: none;
+}
+
+.card-interactive:hover::before {
+  @apply opacity-100;
+}
+
+/* ============================================
+   Progress Bar - Smooth Animation
+   ============================================ */
 .progress-bar {
-  @apply h-2 bg-slate-200 rounded-full overflow-hidden;
+  @apply h-2 bg-slate-100 rounded-full overflow-hidden;
 }
 
 .progress-bar-fill {
-  @apply h-full bg-primary-600 rounded-full transition-all duration-500;
+  @apply h-full rounded-full transition-all ease-out;
+  transition-duration: var(--duration-slower);
+  background: linear-gradient(90deg, #3b82f6, #0ea5e9);
 }
 
-/* Notification styles */
+.progress-bar-fill::after {
+  content: '';
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+  animation: shimmer 2s infinite;
+}
+
+/* ============================================
+   Notification Styles - Polished
+   ============================================ */
 .notification {
-  @apply fixed z-50 p-4 rounded-lg shadow-lg border-l-4 max-w-md;
+  @apply fixed z-50 p-4 pr-12 rounded-xl shadow-xl max-w-md backdrop-blur-sm;
+  animation: notificationSlideIn 0.35s var(--ease-out-expo);
 }
 
 .notification-success {
-  @apply bg-emerald-50 border-emerald-500 text-emerald-800;
+  @apply bg-emerald-50/95 border border-emerald-200 text-emerald-900;
 }
 
 .notification-error {
-  @apply bg-red-50 border-red-500 text-red-800;
+  @apply bg-red-50/95 border border-red-200 text-red-900;
 }
 
 .notification-warning {
-  @apply bg-amber-50 border-amber-500 text-amber-800;
+  @apply bg-amber-50/95 border border-amber-200 text-amber-900;
 }
 
 .notification-info {
-  @apply bg-blue-50 border-blue-500 text-blue-800;
+  @apply bg-blue-50/95 border border-blue-200 text-blue-900;
 }
 
-/* Stage indicator */
+.notification-exit {
+  animation: notificationSlideOut 0.25s var(--ease-in-out-circ) forwards;
+}
+
+/* ============================================
+   Stage Indicator - Interactive
+   ============================================ */
 .stage-indicator {
   @apply flex items-center;
 }
 
 .stage-dot {
   @apply w-10 h-10 rounded-full flex items-center justify-center
-         font-semibold text-sm transition-all duration-200;
+         font-semibold text-sm border-0
+         transition-all duration-200 ease-out;
 }
 
 .stage-dot-complete {
-  @apply bg-emerald-500 text-white;
+  @apply bg-emerald-500 text-white shadow-md shadow-emerald-200;
+}
+
+.stage-dot-complete:hover {
+  @apply bg-emerald-600 shadow-lg shadow-emerald-300 scale-110;
 }
 
 .stage-dot-current {
-  @apply bg-primary-600 text-white ring-4 ring-primary-200;
+  @apply bg-primary-600 text-white ring-4 ring-primary-100 shadow-lg shadow-primary-200;
+  animation: currentStagePulse 2s ease-in-out infinite;
 }
 
 .stage-dot-upcoming {
-  @apply bg-slate-200 text-slate-500;
+  @apply bg-slate-100 text-slate-400 border-2 border-slate-200;
 }
 
 .stage-line {
-  @apply flex-1 h-1 mx-2 rounded-full transition-all duration-200;
+  @apply flex-1 h-1 mx-2 rounded-full transition-all duration-300 ease-out;
 }
 
 .stage-line-complete {
-  @apply bg-emerald-500;
+  @apply bg-emerald-400;
 }
 
 .stage-line-incomplete {
   @apply bg-slate-200;
 }
 
-/* File upload dropzone */
+/* ============================================
+   File Upload Dropzone - Interactive
+   ============================================ */
 .dropzone {
-  @apply border-2 border-dashed border-slate-300 rounded-xl p-8
-         text-center transition-all duration-200 cursor-pointer;
+  @apply relative border-2 border-dashed border-slate-300 rounded-2xl p-10
+         text-center cursor-pointer overflow-hidden
+         transition-all duration-200 ease-out;
 }
 
-.dropzone:hover,
+.dropzone::before {
+  content: '';
+  @apply absolute inset-0 bg-gradient-to-b from-primary-500/5 to-primary-500/10
+         opacity-0 transition-opacity duration-200;
+}
+
+.dropzone:hover {
+  @apply border-primary-400 bg-primary-50/50;
+}
+
+.dropzone:hover::before {
+  @apply opacity-100;
+}
+
 .dropzone-active {
-  @apply border-primary-500 bg-primary-50;
+  @apply border-primary-500 bg-primary-50 scale-[1.02];
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+}
+
+.dropzone-active::before {
+  @apply opacity-100;
 }
 
 .dropzone-reject {
-  @apply border-red-500 bg-red-50;
+  @apply border-red-400 bg-red-50;
 }
 
-/* Tooltip */
+/* ============================================
+   Tooltip - Clean
+   ============================================ */
 .tooltip {
-  @apply absolute z-50 px-2 py-1 text-sm text-white bg-slate-800
-         rounded shadow-lg whitespace-nowrap;
+  @apply absolute z-50 px-3 py-1.5 text-xs font-medium text-white
+         bg-slate-900 rounded-lg shadow-lg;
+  animation: tooltipFadeIn 0.15s ease-out;
 }
 
-/* Loading spinner */
+.tooltip::before {
+  content: '';
+  @apply absolute w-2 h-2 bg-slate-900 rotate-45;
+}
+
+/* ============================================
+   Loading States
+   ============================================ */
 .spinner {
   @apply animate-spin rounded-full border-2 border-slate-200 border-t-primary-600;
 }
 
-/* Modal overlay */
+.spinner-sm {
+  @apply w-4 h-4;
+}
+
+.spinner-md {
+  @apply w-6 h-6;
+}
+
+.spinner-lg {
+  @apply w-10 h-10;
+}
+
+/* Skeleton loading */
+.skeleton {
+  @apply bg-slate-200 rounded animate-pulse;
+}
+
+.skeleton-text {
+  @apply h-4 rounded-md;
+}
+
+.skeleton-title {
+  @apply h-6 w-3/4 rounded-md;
+}
+
+.skeleton-avatar {
+  @apply w-12 h-12 rounded-full;
+}
+
+/* Loading overlay */
+.loading-overlay {
+  @apply absolute inset-0 bg-white/80 backdrop-blur-sm
+         flex items-center justify-center z-10;
+  animation: fadeIn 0.2s ease-out;
+}
+
+/* ============================================
+   Modal Overlay - Smooth
+   ============================================ */
 .modal-overlay {
-  @apply fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4;
+  @apply fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-40
+         flex items-center justify-center p-4;
+  animation: fadeIn 0.2s ease-out;
 }
 
 .modal-content {
-  @apply bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-auto;
+  @apply bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-auto;
+  animation: modalSlideIn 0.3s var(--ease-out-expo);
 }
 
-/* Animation classes */
+.modal-content-lg {
+  @apply max-w-2xl;
+}
+
+.modal-content-xl {
+  @apply max-w-4xl;
+}
+
+/* ============================================
+   Selection/Option Cards
+   ============================================ */
+.option-card {
+  @apply p-4 rounded-xl border-2 border-slate-200 bg-white
+         cursor-pointer transition-all duration-200 ease-out;
+}
+
+.option-card:hover {
+  @apply border-slate-300 shadow-md -translate-y-0.5;
+}
+
+.option-card:active {
+  @apply translate-y-0 shadow-sm;
+}
+
+.option-card-selected {
+  @apply border-primary-500 bg-primary-50/50 shadow-md shadow-primary-100;
+}
+
+.option-card-selected:hover {
+  @apply border-primary-600 bg-primary-50;
+}
+
+/* ============================================
+   Status Badges
+   ============================================ */
+.badge {
+  @apply inline-flex items-center gap-1 px-2.5 py-1 rounded-full
+         text-xs font-semibold tracking-wide;
+}
+
+.badge-success {
+  @apply bg-emerald-100 text-emerald-700;
+}
+
+.badge-warning {
+  @apply bg-amber-100 text-amber-700;
+}
+
+.badge-error {
+  @apply bg-red-100 text-red-700;
+}
+
+.badge-info {
+  @apply bg-blue-100 text-blue-700;
+}
+
+.badge-neutral {
+  @apply bg-slate-100 text-slate-600;
+}
+
+/* ============================================
+   Error Messages - Animated
+   ============================================ */
+.error-message {
+  @apply text-sm text-red-600 mt-1.5 flex items-center gap-1;
+  animation: errorShake 0.4s ease-out;
+}
+
+.error-message svg {
+  @apply w-4 h-4 flex-shrink-0;
+}
+
+/* ============================================
+   Section Headers
+   ============================================ */
+.section-header {
+  @apply text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2;
+}
+
+.section-header-icon {
+  @apply w-5 h-5 text-primary-500;
+}
+
+/* ============================================
+   Dividers
+   ============================================ */
+.divider {
+  @apply border-t border-slate-200 my-6;
+}
+
+.divider-with-text {
+  @apply flex items-center gap-4 my-6;
+}
+
+.divider-with-text::before,
+.divider-with-text::after {
+  content: '';
+  @apply flex-1 border-t border-slate-200;
+}
+
+.divider-with-text span {
+  @apply text-sm text-slate-500 font-medium;
+}
+
+/* ============================================
+   Keyframe Animations
+   ============================================ */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 @keyframes slideIn {
   from {
     opacity: 0;
@@ -221,26 +628,185 @@ select:disabled {
   }
 }
 
-@keyframes fadeIn {
+@keyframes slideUp {
   from {
     opacity: 0;
+    transform: translateY(20px);
   }
   to {
     opacity: 1;
+    transform: translateY(0);
   }
 }
 
-.animate-slide-in {
-  animation: slideIn 0.3s ease-out;
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes notificationSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(100%) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes notificationSlideOut {
+  from {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(100%) scale(0.9);
+  }
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+@keyframes checkPop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+
+@keyframes currentStagePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(59, 130, 246, 0); }
+}
+
+@keyframes errorShake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-4px); }
+  20%, 40%, 60%, 80% { transform: translateX(4px); }
+}
+
+@keyframes tooltipFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes successPop {
+  0% { transform: scale(0); opacity: 0; }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+/* ============================================
+   Animation Utility Classes
+   ============================================ */
 .animate-fade-in {
   animation: fadeIn 0.3s ease-out;
 }
 
-/* Print styles */
+.animate-slide-in {
+  animation: slideIn 0.3s var(--ease-out-expo);
+}
+
+.animate-slide-up {
+  animation: slideUp 0.4s var(--ease-out-expo);
+}
+
+.animate-slide-down {
+  animation: slideDown 0.3s var(--ease-out-expo);
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.25s var(--ease-out-expo);
+}
+
+.animate-success-pop {
+  animation: successPop 0.4s var(--ease-out-back);
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+/* Stagger animations for lists */
+.stagger-animation > * {
+  opacity: 0;
+  animation: slideUp 0.4s var(--ease-out-expo) forwards;
+}
+
+.stagger-animation > *:nth-child(1) { animation-delay: 0ms; }
+.stagger-animation > *:nth-child(2) { animation-delay: 50ms; }
+.stagger-animation > *:nth-child(3) { animation-delay: 100ms; }
+.stagger-animation > *:nth-child(4) { animation-delay: 150ms; }
+.stagger-animation > *:nth-child(5) { animation-delay: 200ms; }
+.stagger-animation > *:nth-child(6) { animation-delay: 250ms; }
+.stagger-animation > *:nth-child(7) { animation-delay: 300ms; }
+.stagger-animation > *:nth-child(8) { animation-delay: 350ms; }
+.stagger-animation > *:nth-child(9) { animation-delay: 400ms; }
+.stagger-animation > *:nth-child(10) { animation-delay: 450ms; }
+
+/* ============================================
+   Print Styles
+   ============================================ */
 @media print {
   .no-print {
     display: none !important;
   }
+
+  body {
+    background: white;
+  }
+
+  .card {
+    box-shadow: none;
+    border: 1px solid #e2e8f0;
+  }
+}
+
+/* ============================================
+   Dark Mode Support (Future)
+   ============================================ */
+@media (prefers-color-scheme: dark) {
+  /* Dark mode styles can be added here */
 }

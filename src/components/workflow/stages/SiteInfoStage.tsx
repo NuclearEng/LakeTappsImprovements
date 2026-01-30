@@ -5,6 +5,7 @@ import { useCallback, useState, lazy, Suspense } from 'react';
 import { useDropzone, FileRejection } from 'react-dropzone';
 import { v4 as uuidv4 } from 'uuid';
 import type { UploadedFile, SitePlanDrawing } from '@/types';
+import ParcelLookup from '@/components/forms/ParcelLookup';
 
 // Lazy load the drawing editor to avoid SSR issues with Fabric.js
 const SitePlanEditor = lazy(() => import('@/components/drawing/SitePlanEditor'));
@@ -30,7 +31,7 @@ interface FileError {
 }
 
 export default function SiteInfoStage() {
-  const { project, updateSiteInfo, saveProject, addNotification, saveDrawing } = useStore();
+  const { project, updateSiteInfo, saveProject, addNotification, saveDrawing, updateEnvironmental } = useStore();
   const [isUploading, setIsUploading] = useState(false);
   const [inputMode, setInputMode] = useState<SiteInputMode>('upload');
 
@@ -228,6 +229,12 @@ export default function SiteInfoStage() {
               placeholder="0123456789"
               className="w-full"
             />
+            <ParcelLookup
+              onParcelFound={(parcelNumber) => {
+                updateSiteInfo({ parcelNumber });
+                saveProject();
+              }}
+            />
           </div>
 
           <div>
@@ -397,6 +404,118 @@ export default function SiteInfoStage() {
           </div>
         )}
       </div>
+      )}
+
+      {/* Environmental Screening */}
+      {project.workflowType === 'waterfront' && (
+        <div className="card mb-6 animate-fade-in">
+          <h2 className="text-lg font-semibold text-slate-900 mb-5 flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center">
+              <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            Environmental Screening
+          </h2>
+          <p className="text-sm text-slate-600 mb-4">
+            Answer these questions to help identify potential environmental review requirements.
+          </p>
+
+          <div className="space-y-4">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={project.environmental?.nearWetlands || false}
+                onChange={(e) => { updateEnvironmental({ nearWetlands: e.target.checked }); saveProject(); }}
+                className="mt-1 w-5 h-5 text-primary-600 rounded focus:ring-primary-500"
+              />
+              <div>
+                <span className="font-medium text-slate-900">Wetlands nearby?</span>
+                <p className="text-sm text-slate-600 mt-0.5">Are there wetlands, marshes, or riparian areas near the project site?</p>
+              </div>
+            </label>
+
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={project.environmental?.vegetationRemoval || false}
+                onChange={(e) => { updateEnvironmental({ vegetationRemoval: e.target.checked }); saveProject(); }}
+                className="mt-1 w-5 h-5 text-primary-600 rounded focus:ring-primary-500"
+              />
+              <div>
+                <span className="font-medium text-slate-900">Vegetation removal required?</span>
+                <p className="text-sm text-slate-600 mt-0.5">Will trees, shrubs, or other vegetation need to be removed?</p>
+              </div>
+            </label>
+
+            {project.environmental?.vegetationRemoval && (
+              <div className="ml-8 animate-fade-in">
+                <label className="block text-sm font-medium text-slate-700 mb-1">Describe vegetation to be removed</label>
+                <textarea
+                  value={project.environmental?.vegetationDescription || ''}
+                  onChange={(e) => updateEnvironmental({ vegetationDescription: e.target.value })}
+                  onBlur={() => saveProject()}
+                  rows={2}
+                  placeholder="Type and quantity of vegetation..."
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white focus:outline-none focus:border-primary-400 focus:ring-4 focus:ring-primary-500/10 resize-none"
+                />
+              </div>
+            )}
+
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={project.environmental?.groundDisturbance || false}
+                onChange={(e) => { updateEnvironmental({ groundDisturbance: e.target.checked }); saveProject(); }}
+                className="mt-1 w-5 h-5 text-primary-600 rounded focus:ring-primary-500"
+              />
+              <div>
+                <span className="font-medium text-slate-900">Significant ground disturbance?</span>
+                <p className="text-sm text-slate-600 mt-0.5">Will the project involve excavation, grading, or significant soil disturbance?</p>
+              </div>
+            </label>
+
+            {project.environmental?.groundDisturbance && (
+              <div className="ml-8 animate-fade-in">
+                <label className="block text-sm font-medium text-slate-700 mb-1">Describe erosion control plan</label>
+                <textarea
+                  value={project.environmental?.erosionControlPlan || ''}
+                  onChange={(e) => updateEnvironmental({ erosionControlPlan: e.target.value })}
+                  onBlur={() => saveProject()}
+                  rows={2}
+                  placeholder="Erosion control measures planned..."
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white focus:outline-none focus:border-primary-400 focus:ring-4 focus:ring-primary-500/10 resize-none"
+                />
+              </div>
+            )}
+
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={project.environmental?.nearFishSpawning || false}
+                onChange={(e) => { updateEnvironmental({ nearFishSpawning: e.target.checked }); saveProject(); }}
+                className="mt-1 w-5 h-5 text-primary-600 rounded focus:ring-primary-500"
+              />
+              <div>
+                <span className="font-medium text-slate-900">Near fish spawning areas?</span>
+                <p className="text-sm text-slate-600 mt-0.5">Is the project near known fish spawning or rearing habitat?</p>
+              </div>
+            </label>
+          </div>
+
+          {(project.environmental?.nearWetlands || project.environmental?.vegetationRemoval || project.environmental?.groundDisturbance || project.environmental?.nearFishSpawning) && (
+            <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl animate-fade-in">
+              <div className="flex gap-3">
+                <svg className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <p className="text-sm text-amber-800">
+                  <strong>Additional environmental review may be required.</strong> Based on your answers, your project may need environmental assessment or additional agency consultation.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Tips */}

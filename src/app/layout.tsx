@@ -7,6 +7,9 @@ const inter = Inter({ subsets: ['latin'] });
 export const metadata: Metadata = {
   title: 'Lake Tapps Permit Workflow',
   description: 'Guided workflow application for Lake Tapps improvement permits',
+  icons: {
+    icon: '/favicon.svg',
+  },
 };
 
 export default function RootLayout({

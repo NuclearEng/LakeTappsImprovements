@@ -2,7 +2,7 @@
 
 import { useStore } from '@/store/useStore';
 import type { DrawingToolType, DrawingLayerType } from '@/types';
-import { useMemo } from 'react';
+import { useMemo, useEffect } from 'react';
 
 // Tool prompts similar to OMAX Layout - clear guidance for each tool action
 const TOOL_PROMPTS: Record<DrawingToolType, string> = {
@@ -89,7 +89,7 @@ export default function DrawingToolbar({ onPromptChange }: DrawingToolbarProps) 
   const currentPrompt = useMemo(() => TOOL_PROMPTS[activeTool], [activeTool]);
 
   // Notify parent of prompt changes
-  useMemo(() => {
+  useEffect(() => {
     onPromptChange?.(currentPrompt);
   }, [currentPrompt, onPromptChange]);
 

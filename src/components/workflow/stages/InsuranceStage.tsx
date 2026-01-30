@@ -136,6 +136,144 @@ export default function InsuranceStage() {
                 </div>
               </div>
 
+              <div className="grid md:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label htmlFor="agentName" className="block text-sm font-medium text-slate-700 mb-1">
+                    Insurance Agent Name
+                  </label>
+                  <input
+                    type="text"
+                    id="agentName"
+                    name="agentName"
+                    value={insurance.agentName || ''}
+                    onChange={handleChange}
+                    onBlur={handleBlur}
+                    placeholder="Agent name"
+                    className="w-full"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="agentPhone" className="block text-sm font-medium text-slate-700 mb-1">
+                    Agent Phone
+                  </label>
+                  <input
+                    type="tel"
+                    id="agentPhone"
+                    name="agentPhone"
+                    value={insurance.agentPhone || ''}
+                    onChange={handleChange}
+                    onBlur={handleBlur}
+                    placeholder="(xxx) xxx-xxxx"
+                    className="w-full"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="agentEmail" className="block text-sm font-medium text-slate-700 mb-1">
+                    Agent Email
+                  </label>
+                  <input
+                    type="email"
+                    id="agentEmail"
+                    name="agentEmail"
+                    value={insurance.agentEmail || ''}
+                    onChange={handleChange}
+                    onBlur={handleBlur}
+                    placeholder="agent@insurance.com"
+                    className="w-full"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="policyType" className="block text-sm font-medium text-slate-700 mb-1">
+                    Policy Type
+                  </label>
+                  <select
+                    id="policyType"
+                    name="policyType"
+                    value={insurance.policyType || ''}
+                    onChange={handleChange as any}
+                    onBlur={handleBlur}
+                    className="w-full"
+                  >
+                    <option value="">Select policy type</option>
+                    <option value="homeowners">Homeowners</option>
+                    <option value="umbrella">Umbrella</option>
+                    <option value="commercial">Commercial</option>
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="liabilityLimit" className="block text-sm font-medium text-slate-700 mb-1">
+                    Liability Limit
+                  </label>
+                  <input
+                    type="text"
+                    id="liabilityLimit"
+                    name="liabilityLimit"
+                    value={insurance.liabilityLimit || ''}
+                    onChange={handleChange}
+                    onBlur={handleBlur}
+                    placeholder="e.g., 300000"
+                    className="w-full"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="coverageAmount" className="block text-sm font-medium text-slate-700 mb-1">
+                    Coverage Amount
+                  </label>
+                  <input
+                    type="text"
+                    id="coverageAmount"
+                    name="coverageAmount"
+                    value={insurance.coverageAmount || ''}
+                    onChange={handleChange}
+                    onBlur={handleBlur}
+                    placeholder="e.g., 500000"
+                    className="w-full"
+                  />
+                </div>
+              </div>
+
+              {/* Expiration Warning */}
+              {insurance.expirationDate && (() => {
+                const expDate = new Date(insurance.expirationDate);
+                const now = new Date();
+                const daysUntilExpiry = Math.ceil((expDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+                if (daysUntilExpiry < 60 && daysUntilExpiry > 0) {
+                  return (
+                    <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                      <div className="flex gap-3">
+                        <svg className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        <div>
+                          <p className="font-medium text-amber-800">Policy Expiring Soon</p>
+                          <p className="text-sm text-amber-700 mt-1">
+                            Your insurance policy expires in {daysUntilExpiry} days. CWA requires continuous coverage — please renew before expiration.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+                if (daysUntilExpiry <= 0) {
+                  return (
+                    <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                      <div className="flex gap-3">
+                        <svg className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <div>
+                          <p className="font-medium text-red-800">Policy Expired</p>
+                          <p className="text-sm text-red-700 mt-1">
+                            Your insurance policy has expired. CWA requires active coverage at all times.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
               <label className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-lg cursor-pointer">
                 <input
                   type="checkbox"
